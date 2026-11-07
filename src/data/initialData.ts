@@ -496,23 +496,22 @@ export async function saveToFirebase(collectionName: string, data: any): Promise
           const apiKey = "AIzaSyAn6z4sDy1_sF-YmkLjA0Z1TQwU_iLClf4";
           const projectId = "qalbalelm";
           const restUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/qalbalelm_data/${collectionName}?key=${apiKey}`;
-            const res = await fetch(restUrl, {
-              method: "PATCH",
-              headers: apiHeaders,
-              body: JSON.stringify({
-                fields: {
-                  data: wrapRestValue(sanitized),
-                  updatedAt: { stringValue: new Date().toISOString() },
-                },
-              }),
-            });
-            if (res.ok) {
-              console.log(`☁️ [Firebase REST] تم الحفظ بنجاح عبر السحابة: ${collectionName}`);
-              notifyCloudStatus('connected', null);
-              isSuccess = true;
-            }
-          } catch {}
-        }
+          const res = await fetch(restUrl, {
+            method: "PATCH",
+            headers: apiHeaders,
+            body: JSON.stringify({
+              fields: {
+                data: wrapRestValue(sanitized),
+                updatedAt: { stringValue: new Date().toISOString() },
+              },
+            }),
+          });
+          if (res.ok) {
+            console.log(`☁️ [Firebase REST] تم الحفظ بنجاح عبر السحابة: ${collectionName}`);
+            notifyCloudStatus('connected', null);
+            isSuccess = true;
+          }
+        } catch {}
       }
 
       // If courses, also broadcast to backend server API

@@ -182,7 +182,7 @@ export function getGitHubHlsConfig(): GitHubHlsConfig | null {
     }
   } catch {}
   return {
-    token: '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',
+    token: process.env.GITHUB_VAULT_TOKEN || process.env.VITE_GITHUB_TOKEN || '',
     username: 'hos098sam-jpg',
     activeRepo: 'x3bb48b-c76c300b',
     repoIndex: 1,

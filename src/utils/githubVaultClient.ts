@@ -7,7 +7,7 @@
 export const GITHUB_VAULT_CONFIG = {
   owner: 'hos098sam-jpg',
   repo: 'x3bb48b-c76c300b',
-  token: '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',
+  token: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GITHUB_TOKEN) || '',
   branch: 'main',
 };
 
