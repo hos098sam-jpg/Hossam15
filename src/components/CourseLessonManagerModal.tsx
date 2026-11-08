@@ -502,6 +502,9 @@ export const CourseLessonManagerModal: React.FC<CourseLessonManagerModalProps> =
   const [ghHlsProgress, setGhHlsProgress] = useState<{
     percentage: number;
     statusText: string;
+    uploadedMB?: string;
+    totalMB?: string;
+    speedMBps?: string;
   } | null>(null);
   const [ghHlsSuccessMsg, setGhHlsSuccessMsg] = useState<string | null>(null);
   const [ghHlsError, setGhHlsError] = useState<string | null>(null);

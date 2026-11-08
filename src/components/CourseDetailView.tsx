@@ -21,6 +21,7 @@ import {
   Check,
   Video,
   ExternalLink,
+  Radio as RadioReceiver,
   Download,
   Eye,
   X,
@@ -1741,7 +1742,7 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
                       <div className="p-4 rounded-2xl bg-amber-950/30 border border-amber-500/40 space-y-2 animate-pulse">
                         <div className="flex items-center justify-between text-xs font-black text-amber-300">
                           <span className="flex items-center gap-2">
-                            <Radio className="w-4 h-4 text-amber-400 animate-spin" />
+                            <RadioReceiver className="w-4 h-4 text-amber-400 animate-spin" />
                             <span>جاري التحقق من التحويل في قاعدة البيانات وتفعيل الكورس...</span>
                           </span>
                           <span className="font-mono text-[10px] bg-amber-500/20 px-2 py-0.5 rounded">

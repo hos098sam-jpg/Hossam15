@@ -10,7 +10,7 @@ export const ResponsiveContainer: React.FC<{
   </div>
 );
 
-const BaseChart: React.FC<{ data?: any[]; children?: React.ReactNode }> = ({ data = [], children }) => {
+const BaseChart: React.FC<{ data?: any[]; children?: React.ReactNode; [key: string]: any }> = ({ data = [], children }) => {
   if (!data || data.length === 0) return null;
   const maxVal = Math.max(100, ...data.map((d) => Number(d?.النسبة_المئوية ?? d?.percentage ?? d?.value ?? 0)));
   return (

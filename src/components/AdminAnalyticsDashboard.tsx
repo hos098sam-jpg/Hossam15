@@ -37,7 +37,7 @@ import {
   Line,
   Area,
   AreaChart,
-} from 'recharts';
+} from '../utils/rechartsShim';
 import type { Course, Competition, User, StudentExamSubmission } from '../types';
 
 interface AdminAnalyticsDashboardProps {

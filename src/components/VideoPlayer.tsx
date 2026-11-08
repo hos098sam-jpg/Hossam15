@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { motion } from 'motion/react';
 import {
   ShieldCheck,
   ShieldAlert,
@@ -487,10 +486,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     : 'منصة قلب العلم (جلسة دراسية مشفرة)';
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 15 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, ease: 'easeOut' }}
+    <div
       ref={containerRef}
       className={`bg-slate-950 border border-slate-800/90 rounded-2xl md:rounded-3xl p-3 sm:p-4.5 shadow-2xl select-none relative overflow-hidden space-y-3 ${
         isFullscreen ? 'w-screen h-screen flex flex-col justify-center rounded-none p-0 border-0 m-0' : className
@@ -814,7 +810,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           </div>
         </div>
       )}
-    </motion.div>
+    </div>
   );
 };
 

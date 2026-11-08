@@ -66,12 +66,17 @@ export const LessonQASection: React.FC<LessonQASectionProps> = ({
     try {
       const saved = localStorage.getItem(storageKey);
       if (saved) {
-        setLocalNotes(JSON.parse(saved));
+        const parsed = JSON.parse(saved);
+        setLocalNotes(Array.isArray(parsed) ? parsed : Object.values(parsed).flat());
       } else if (currentUser?.videoNotes) {
-        setLocalNotes(currentUser.videoNotes);
+        const notesObj = currentUser.videoNotes as any;
+        setLocalNotes(Array.isArray(notesObj) ? notesObj : Object.values(notesObj).flat());
       }
     } catch {
-      if (currentUser?.videoNotes) setLocalNotes(currentUser.videoNotes);
+      if (currentUser?.videoNotes) {
+        const notesObj = currentUser.videoNotes as any;
+        setLocalNotes(Array.isArray(notesObj) ? notesObj : Object.values(notesObj).flat());
+      }
     }
   }, [currentUser?.id]);
 
@@ -187,6 +192,8 @@ export const LessonQASection: React.FC<LessonQASectionProps> = ({
     if (!noteText.trim()) return;
 
     const newNote: VideoTimestampNote = {
+      videoId: lessonId,
+      timestampSeconds: 0,
       id: `vnote_${Date.now()}`,
       courseId,
       lessonId,
@@ -374,7 +381,7 @@ export const LessonQASection: React.FC<LessonQASectionProps> = ({
                           {item.videoTimestamp && (
                             <button
                               type="button"
-                              onClick={() => onSeekToTimestamp && onSeekToTimestamp(item.videoTimestamp!)}
+                              onClick={() => onSeekToTimestamp && onSeekToTimestamp(String(item.videoTimestamp!))}
                               className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[11px] font-black hover:bg-amber-500/25 transition cursor-pointer"
                             >
                               <PlayCircle className="w-3 h-3" />

@@ -108,65 +108,62 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate, onAuthSuccess,
       // 1. Fetch hardware device identity
       const deviceInfo = await getDeviceInfoPayload().catch(() => ({ deviceId: '', deviceName: '' }));
 
-      // 2. Direct Admin / Supervisor verification via Firebase Auth
+      // 2. Direct Admin / Supervisor verification
       if (isSupervisor) {
+        // STRICT SECURITY: Validate password against Firebase Auth or verified master password
+        let isPassValid = false;
+        let fbUid = 'admin-hosam-supervisor';
+
         try {
           const fbRes = await loginWithEmail('hos098sam@gmail.com', cleanPass);
-          const adminUser: User = {
-            id: fbRes.uid || 'admin-hosam-supervisor',
-            name: 'إدارة المنصة',
-            email: 'hos098sam@gmail.com',
-            phone: '01040672314',
-            parentPhone: '',
-            role: 'admin',
-            status: 'active',
-            schoolYear: 'المشرف العام ومؤسس المنصة',
-            registeredAt: '2026-09-25',
-            emailVerified: true,
-          };
-          const newSessionId = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
-          try {
-            localStorage.setItem('qalb_alam_device_session_id', newSessionId);
-            localStorage.setItem('qalb_alam_session_login_ts', String(Date.now()));
-          } catch {}
-          // Register session asynchronously without blocking login
-          fetch('/api/auth/register-session', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              userId: adminUser.id,
-              phone: adminUser.phone,
-              activeSessionId: newSessionId,
-              deviceId: deviceInfo.deviceId,
-              deviceName: deviceInfo.deviceName,
-            }),
-          }).catch(() => {});
-          saveCurrentUser(adminUser);
-          onAuthSuccess(adminUser);
-          return;
-        } catch (adminErr: any) {
-          console.warn('Supervisor Firebase Auth login notice:', adminErr?.message || adminErr);
-          const adminUser: User = {
-            id: 'admin-hosam-supervisor',
-            name: 'إدارة المنصة',
-            email: 'hos098sam@gmail.com',
-            phone: '01040672314',
-            parentPhone: '',
-            role: 'admin',
-            status: 'active',
-            schoolYear: 'المشرف العام ومؤسس المنصة',
-            registeredAt: '2026-09-25',
-            emailVerified: true,
-          };
-          const newSessionId = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
-          try {
-            localStorage.setItem('qalb_alam_device_session_id', newSessionId);
-            localStorage.setItem('qalb_alam_session_login_ts', String(Date.now()));
-          } catch {}
-          saveCurrentUser(adminUser);
-          onAuthSuccess(adminUser);
+          if (fbRes) {
+            isPassValid = true;
+            if (fbRes.uid) fbUid = fbRes.uid;
+          }
+        } catch (fbErr: any) {
+          // If Firebase network / offline fallback, check master password strictly
+          if (cleanPass === 'Hossam2027') {
+            isPassValid = true;
+          }
+        }
+
+        if (!isPassValid) {
+          setError('كلمة المرور غير صحيحة لحساب إدارة المنصة.');
+          setLoading(false);
           return;
         }
+
+        const adminUser: User = {
+          id: fbUid,
+          name: 'إدارة المنصة',
+          email: 'hos098sam@gmail.com',
+          phone: '01040672314',
+          parentPhone: '',
+          role: 'admin',
+          status: 'active',
+          schoolYear: 'المشرف العام ومؤسس المنصة',
+          registeredAt: '2026-09-25',
+          emailVerified: true,
+        };
+        const newSessionId = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+        try {
+          localStorage.setItem('qalb_alam_device_session_id', newSessionId);
+          localStorage.setItem('qalb_alam_session_login_ts', String(Date.now()));
+        } catch {}
+        fetch('/api/auth/register-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: adminUser.id,
+            phone: adminUser.phone,
+            activeSessionId: newSessionId,
+            deviceId: deviceInfo.deviceId,
+            deviceName: deviceInfo.deviceName,
+          }),
+        }).catch(() => {});
+        saveCurrentUser(adminUser);
+        onAuthSuccess(adminUser);
+        return;
       }
 
       // 3. Query central server login to verify credentials, evaluate device binding limits, and kill old sessions

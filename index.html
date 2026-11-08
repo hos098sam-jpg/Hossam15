@@ -32,7 +32,29 @@
     <meta name="publisher" content="منصة قلب العلم" />
     <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
 
-    <!-- Google Site Name in Search Results (Schema.org WebSite) -->
+    <!-- Google Site Name in Search Results (Supports qalbalelm.pages.dev & qalbalelm.web.app) -->
+    <script>
+      (function() {
+        try {
+          var currentOrigin = (window.location && window.location.origin) ? window.location.origin : 'https://qalbalelm.pages.dev';
+          var s = document.createElement('script');
+          s.type = 'application/ld+json';
+          s.text = JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "WebSite",
+            "name": "منصة قلب العلم",
+            "alternateName": [
+              "منصة قلب العلم التعليمية",
+              "قلب العلم",
+              "Qalb El Elm"
+            ],
+            "url": currentOrigin + "/",
+            "image": currentOrigin + "/logo.png?v=2027.2"
+          });
+          document.head.appendChild(s);
+        } catch (e) {}
+      })();
+    </script>
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
@@ -43,8 +65,8 @@
         "قلب العلم",
         "Qalb El Elm"
       ],
-      "url": "https://qalbalelm.web.app/",
-      "image": "https://qalbalelm.web.app/logo.png?v=2027.2"
+      "url": "https://qalbalelm.pages.dev/",
+      "image": "https://qalbalelm.pages.dev/logo.png?v=2027.2"
     }
     </script>
 

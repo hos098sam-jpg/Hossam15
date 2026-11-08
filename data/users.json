@@ -4,24 +4,11 @@
     "schoolName": "الحامولى الثانويه",
     "governorate": "الفيوم",
     "motherPhone": "",
-    "examResults": [
-      {
-        "examId": "exam_history_unit1",
-        "examTitle": "امتحان الفصل الأول - مادة التاريخ لدفعة 2027",
-        "score": 30,
-        "totalMarks": 30,
-        "percentage": 100,
-        "passed": true,
-        "date": "2026-10-21T17:16:42.081Z",
-        "source": "mobile_flutter_app"
-      }
-    ],
+    "examResults": {},
     "email": "mnbvcza@gmail.com",
     "secondName": "رجب",
-    "schoolYear": "الصف الثالث الثانوي",
-    "enrolledCourseIds": [
-      "course-1792304762232"
-    ],
+    "schoolYear": "الصف الثاني الثانوي",
+    "enrolledCourseIds": [],
     "lastWatched": {
       "courseId": "course-1792304762232",
       "lessonId": "lesson_1792304777935_xzy1",
@@ -38,22 +25,14 @@
     "emailVerified": true,
     "name": "عمر رجب محمد ابراهيم",
     "lastName": "ابراهيم",
-    "createdAt": {
-      "type": "firestore/timestamp/1.0",
-      "seconds": 1790182582,
-      "nanoseconds": 544000000
-    },
+    "createdAt": null,
     "fatherPhone": "01132203172",
     "activeSessionId": "",
     "firstName": "عمر",
     "registeredAt": "2026-09-23",
     "educationSystem": "بكالوريا",
     "status": "active",
-    "updatedAt": {
-      "type": "firestore/timestamp/1.0",
-      "seconds": 1790767387,
-      "nanoseconds": 440000000
-    },
+    "updatedAt": null,
     "parentPhone": "01132203172",
     "nationalId": "",
     "thirdName": "محمد",
@@ -68,30 +47,30 @@
     "registeredAt": "2026-09-25",
     "examResults": {
       "exam-1821817784175": {
-        "completedAt": "2027-09-24",
-        "percentage": 0,
         "maxScore": 20,
         "passed": false,
+        "completedAt": "2027-09-24",
         "score": 0,
-        "attemptsCount": 1
+        "attemptsCount": 1,
+        "percentage": 0
       }
     },
     "enrolledCourseIds": [],
     "role": "admin",
-    "activeSessionId": "sess_1791976261304_wd8o2ubw",
+    "activeSessionId": "sess_1794003217313_gas6ydmg",
     "completedVideos": {
       "vid_1791535741569": true
     },
-    "schoolYear": "طالب منصة قلب العلم",
+    "schoolYear": "المشرف العام ومؤسس المنصة",
     "email": "hos098sam@gmail.com",
-    "updatedAt": "2026-10-14T22:26:46.940Z",
+    "updatedAt": "2026-11-06T22:49:15.795Z",
     "status": "active",
     "parentPhone": "",
-    "lastLoginAt": "2026-10-14T11:11:01.304Z",
-    "name": "مستخدم منصة قلب العلم",
-    "emailVerified": false,
-    "phone": "",
-    "currentDeviceId": "dev_xisyea_n6ti80nkrbh724ae",
+    "lastLoginAt": "2026-11-06T22:13:37.313Z",
+    "name": "إدارة المنصة",
+    "emailVerified": true,
+    "phone": "01040672314",
+    "currentDeviceId": "dev_o2vf6n_0c8zcqlwmw5j6x2c",
     "currentDeviceName": "هاتف / تابلت Android - Google Chrome"
   },
   {
@@ -99,16 +78,12 @@
     "name": "محمد حسين نادي سلطان",
     "religion": "التربية الدينية الإسلامية",
     "phone": "01030855831",
-    "createdAt": {
-      "type": "firestore/timestamp/1.0",
-      "seconds": 1792006681,
-      "nanoseconds": 977000000
-    },
+    "createdAt": null,
     "email": "01030855831@qalbalelm.edu",
     "enrolledCourseIds": [
       "course-1791414787637"
     ],
-    "status": "active",
+    "status": "rejected",
     "parentPhone": "01088664477",
     "schoolYear": "الصف الثالث الثانوي",
     "secondName": "حسين",
@@ -117,17 +92,13 @@
     "lastName": "سلطان",
     "role": "student",
     "educationSystem": "عربي",
-    "activeSessionId": "sess_1792006680926_a15ix7sj",
+    "activeSessionId": "",
     "thirdName": "نادي",
     "examResults": {},
     "motherPhone": "",
     "governorate": "السويس",
     "uid": "lsHWCRNhKkS8t4XdvIIIOLc2DWy1",
-    "updatedAt": {
-      "type": "firestore/timestamp/1.0",
-      "seconds": 1792006705,
-      "nanoseconds": 521000000
-    },
+    "updatedAt": null,
     "nationalId": "",
     "division": "علمي علوم",
     "lastLoginAt": "2026-10-14T19:38:00.926Z",
@@ -145,7 +116,7 @@
     "registeredAt": "2026-10-04",
     "accountNumber": "01063839943",
     "name": "ميس : إسراء فرج",
-    "updatedAt": "2026-10-14T22:26:46.946Z",
+    "updatedAt": "2026-11-06T22:49:15.796Z",
     "gender": "أنثى",
     "specialty": "عام لجميع الشعب",
     "status": "active",
@@ -166,11 +137,7 @@
     "name": "محمد حسين نادي سلطان",
     "activeSessionId": "sess_1791351705066_nu4ijk7f",
     "nationalId": "",
-    "createdAt": {
-      "type": "firestore/timestamp/1.0",
-      "seconds": 1791351705,
-      "nanoseconds": 399000000
-    },
+    "createdAt": null,
     "lastLoginAt": "2026-10-07T05:41:45.066Z",
     "email": "01030855031@qalbalelm.edu",
     "division": "بكالوريا",
@@ -181,11 +148,7 @@
     "phone": "01030855031",
     "role": "student",
     "emailVerified": true,
-    "updatedAt": {
-      "type": "firestore/timestamp/1.0",
-      "seconds": 1791351705,
-      "nanoseconds": 399000000
-    },
+    "updatedAt": null,
     "gender": "ذكر",
     "religion": "التربية الدينية الإسلامية",
     "thirdName": "نادي",
@@ -209,16 +172,12 @@
     "motherPhone": "",
     "governorate": "السويس",
     "uid": "xwyUnwRqGnNXkkH0OQQUJy9oQ2w2",
-    "schoolYear": "الصف الثالث الثانوي",
+    "schoolYear": "طالب منصة قلب العلم",
     "secondName": "تجريبي",
     "schoolName": "تجريبي",
     "enrolledCourseIds": [],
     "lastName": "تجريبي",
-    "createdAt": {
-      "type": "firestore/timestamp/1.0",
-      "seconds": 1790458969,
-      "nanoseconds": 371000000
-    },
+    "createdAt": null,
     "lastLoginAt": "2026-09-29T01:05:46.077Z",
     "religion": "التربية الدينية الإسلامية",
     "educationSystem": "عربي",
@@ -228,16 +187,16 @@
     "updatedAt": "2026-09-29T13:42:42.877Z",
     "status": "active",
     "division": "شعبة علمي علوم",
-    "phone": "01020304050",
+    "phone": "",
     "email": "01020304050@qalb-alam.edu",
     "thirdName": "حساب",
     "activeSessionId": "dev_sess_1790643946076_2g8j7j1a",
     "role": "student",
     "nationalId": "",
-    "parentPhone": "01020303050",
+    "parentPhone": "",
     "firstName": "حساب",
     "emailVerified": false,
-    "name": "حساب تجريبي حساب تجريبي",
+    "name": "مستخدم منصة قلب العلم",
     "completedVideos": {},
     "walletBalance": 0,
     "walletTransactions": []
@@ -445,5 +404,22 @@
     "completedVideos": {},
     "walletBalance": 0,
     "walletTransactions": []
+  },
+  {
+    "id": "admin-hosam-supervisor",
+    "name": "إدارة المنصة",
+    "email": "hos098sam@gmail.com",
+    "phone": "01040672314",
+    "parentPhone": "",
+    "role": "admin",
+    "status": "active",
+    "schoolYear": "المشرف العام ومؤسس المنصة",
+    "registeredAt": "2026-09-25",
+    "emailVerified": true,
+    "activeSessionId": "sess_1920313741984_1rcska2i",
+    "currentDeviceId": "dev_xisyea_ilffojouoi6h7xdy",
+    "currentDeviceName": "هاتف / تابلت Android - Google Chrome",
+    "lastLoginAt": "2030-11-07T20:29:01.984Z",
+    "enrolledCourseIds": []
   }
 ]

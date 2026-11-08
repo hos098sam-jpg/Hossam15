@@ -114,6 +114,18 @@ if (typeof window !== 'undefined') {
           const newSessionId = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
 
           if (isSupervisor) {
+            const passInput = String(reqBody.password || '').trim();
+            // STRICT SECURITY: Never grant admin access without the verified admin password!
+            if (passInput !== 'Hossam2027') {
+              return new Response(JSON.stringify({
+                success: false,
+                message: 'كلمة المرور غير صحيحة لحساب إدارة المنصة.',
+              }), {
+                status: 401,
+                headers: { 'Content-Type': 'application/json' },
+              });
+            }
+
             const adminUser = {
               id: 'admin-hosam-supervisor',
               name: 'إدارة المنصة',

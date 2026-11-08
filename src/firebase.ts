@@ -20,7 +20,7 @@ const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 let firestoreDb: ReturnType<typeof getFirestore>;
 try {
   firestoreDb = initializeFirestore(app, {
-    experimentalAutoDetectLongPolling: true,
+    experimentalForceLongPolling: true,
     localCache: persistentLocalCache({
       tabManager: persistentMultipleTabManager(),
     }),

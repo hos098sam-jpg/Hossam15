@@ -54,6 +54,10 @@ export interface User {
   email?: string;
   emailVerified?: boolean;
   password?: string;
+  grade?: string;
+  completedLessonsIds?: string[];
+  watchedVideos?: any;
+  completedExams?: any;
   schoolYear: string;
   role: 'student' | 'admin' | 'parent' | 'teacher' | 'assistant';
   authProvider?: 'whatsapp' | 'email' | 'parent' | 'phone';
@@ -120,7 +124,10 @@ export interface VideoTimestampNote {
   timestampSeconds: number;
   timestampFormatted: string;
   noteText: string;
+  courseId?: string;
+  lessonId?: string;
   createdAt: string;
+  lessonTitle?: string;
 }
 
 export interface WalletTransaction {
@@ -274,6 +281,8 @@ export interface LessonVideo {
   vcdnVideoId?: string;
   vcdnStatus?: 'uploading' | 'processing' | 'ready' | 'failed';
   vcdnThumbnailUrl?: string;
+  vcdnHlsUrl?: string;
+  vcdnEmbedUrl?: string;
   fileSize?: number;
 }
 
@@ -469,6 +478,8 @@ export interface StudentExamSubmission {
   totalScore: number;
   maxScore: number;
   percentage: number;
+  score?: number;
+  totalPoints?: number;
   passed?: boolean;
   essayGrades?: Record<string, EssayGradingResult>;
   essayReviews?: Record<string, EssayReviewItem>;
@@ -612,11 +623,14 @@ export interface CourseBundle {
   instructor: string;
   instructorId?: string;
   coverImage?: string;
+  badgeText?: string;
+  grade?: string;
   courseIds: string[]; // قائمة الكورسات المشمولة داخل الباقة
   originalTotalPrice: number; // مجموع أسعار الكورسات الأصلية
   bundlePrice: number; // سعر الباقة المخفض
   discountPercentage: number; // نسبة التوفير %
   isPublished: boolean;
+  features?: string[];
   createdAt: string;
 }
 
@@ -627,6 +641,7 @@ export interface LessonQAReply {
   authorRole: 'student' | 'admin' | 'teacher' | 'assistant';
   content: string;
   imageUrl?: string;
+  text?: string;
   createdAt: string;
 }
 
@@ -644,6 +659,8 @@ export interface LessonQAItem {
   questionText: string;
   questionImageUrl?: string;
   createdAt: string;
+  videoTimestamp?: number;
+  imageUrl?: string;
   isResolved?: boolean;
   replies: LessonQAReply[];
 }

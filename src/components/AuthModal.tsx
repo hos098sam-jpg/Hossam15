@@ -711,6 +711,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 serverUser: localMatch,
               };
             } else if (isSupervisor) {
+              if (cleanPass !== 'Hossam2027') {
+                setError('كلمة المرور غير صحيحة لحساب إدارة المنصة.');
+                setIsSubmitting(false);
+                return;
+              }
               const adminUser: User = {
                 id: 'admin-hosam-supervisor',
                 name: 'إدارة المنصة',

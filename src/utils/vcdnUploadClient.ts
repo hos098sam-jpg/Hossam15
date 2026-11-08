@@ -25,6 +25,8 @@ export interface VcdnUploadResult {
   status: 'uploading' | 'processing' | 'ready' | 'failed';
   title: string;
   remoteAuthError?: boolean;
+  embedUrl?: string;
+  hlsUrl?: string;
   message?: string;
 }
 

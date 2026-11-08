@@ -48,7 +48,7 @@ export function buildParentWhatsappReportText(
       ? Object.values(student.examResults)
           .slice(0, 4)
           .map(
-            (r) =>
+            (r: any) =>
               `• ${r.examTitle || 'امتحان إلكتروني'}: ${r.score}/${r.maxScore} (${r.percentage}%) - ${
                 r.passed ? 'ناجح ✅' : 'يحتاج مراجعة ⚠️'
               }`

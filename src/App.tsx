@@ -396,6 +396,12 @@ export default function App() {
           } else {
             if (localCandidate) {
               const verifiedLocal = ensureUserPrivileges({
+                name: localCandidate.name,
+                phone: localCandidate.phone,
+                schoolYear: localCandidate.schoolYear,
+                role: localCandidate.role,
+                parentPhone: localCandidate.parentPhone || "",
+                registeredAt: localCandidate.registeredAt || new Date().toISOString(),
                 ...localCandidate,
                 id: fbUser.uid,
                 emailVerified: fbUser.emailVerified,
