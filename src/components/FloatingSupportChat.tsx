@@ -19,6 +19,7 @@ import { User, SupportChatTicket, SupportChatMessage } from '../types';
 import { compressImageFile } from '../utils/imageUtils';
 import { db, auth } from '../auth';
 import { doc, onSnapshot, setDoc, getDoc } from 'firebase/firestore';
+import { getClientAuthHeaders } from '../utils/authToken';
 
 interface FloatingSupportChatProps {
   currentUser: User | null;
@@ -26,11 +27,11 @@ interface FloatingSupportChatProps {
   onOpenAdminSupport?: () => void;
 }
 
-const STORAGE_SUPPORT_USER_KEY = 'qalb_alam_support_guest_info';
+const STORAGE_SUPPORT_USER_KEY = 'al_motafalsifa_support_guest_info';
 
 export const FloatingSupportChat: React.FC<FloatingSupportChatProps> = ({
   currentUser,
-  platformName = 'منصة قلب العلم',
+  platformName = 'منصة المتفلسفة ',
   onOpenAdminSupport,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -85,7 +86,8 @@ export const FloatingSupportChat: React.FC<FloatingSupportChatProps> = ({
 
     const fetchLatestTicket = async () => {
       try {
-        const res = await fetch(`/api/support-chat/ticket/${encodeURIComponent(ticketId)}`);
+        const ticketHeaders = await getClientAuthHeaders();
+        const res = await fetch(`/api/support-chat/ticket/${encodeURIComponent(ticketId)}`, { headers: ticketHeaders });
         if (res.ok) {
           const data = await res.json();
           if (isMounted && data?.ticket) {
@@ -94,11 +96,15 @@ export const FloatingSupportChat: React.FC<FloatingSupportChatProps> = ({
               setUnreadCount(data.ticket.unreadByStudent || 0);
             } else if (step === 'chat' && data.ticket.unreadByStudent > 0) {
               setUnreadCount(0);
-              fetch('/api/support-chat/mark-read', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ticketId: data.ticket.id, readerRole: 'student' }),
-              }).catch(() => {});
+              getClientAuthHeaders({ 'Content-Type': 'application/json' })
+                .then((headers) =>
+                  fetch('/api/support-chat/mark-read', {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({ ticketId: data.ticket.id, readerRole: 'student' }),
+                  })
+                )
+                .catch(() => {});
             }
           }
         }
@@ -118,7 +124,7 @@ export const FloatingSupportChat: React.FC<FloatingSupportChatProps> = ({
 
     if (isPrivileged) {
       try {
-        const docRef = doc(db, 'qalbalelm_data', 'support_chats');
+        const docRef = doc(db, 'al_motafalsifa_data', 'support_chats');
         unsubFirestore = onSnapshot(
           docRef,
           (snap) => {
@@ -163,7 +169,7 @@ export const FloatingSupportChat: React.FC<FloatingSupportChatProps> = ({
         auth.currentUser?.email === 'hos098sam@gmail.com');
     if (!isPrivileged) return;
     try {
-      const docRef = doc(db, 'qalbalelm_data', 'support_chats');
+      const docRef = doc(db, 'al_motafalsifa_data', 'support_chats');
       const snap = await getDoc(docRef);
       let list: SupportChatTicket[] = [];
       if (snap.exists() && Array.isArray(snap.data()?.data)) {
@@ -202,9 +208,10 @@ export const FloatingSupportChat: React.FC<FloatingSupportChatProps> = ({
         JSON.stringify({ name: cleanName, phone: cleanPhone })
       );
 
+      const startHeaders = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
       const res = await fetch('/api/support-chat/start', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: startHeaders,
         body: JSON.stringify({
           studentName: cleanName,
           studentPhone: cleanPhone,
@@ -268,9 +275,10 @@ export const FloatingSupportChat: React.FC<FloatingSupportChatProps> = ({
     setIsSending(true);
 
     try {
+      const msgHeaders = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
       const res = await fetch('/api/support-chat/message', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: msgHeaders,
         body: JSON.stringify({
           ticketId: activeTicket.id,
           studentName: activeTicket.studentName,
@@ -316,31 +324,28 @@ export const FloatingSupportChat: React.FC<FloatingSupportChatProps> = ({
 
   return (
     <>
-      {/* FLOATING COMPACT SUPPORT BUTTON AT BOTTOM-RIGHT OF PLATFORM */}
+      {/* FLOATING COMPACT ICON-ONLY SUPPORT BUTTON AT BOTTOM-RIGHT OF PLATFORM */}
       {!isOpen && (
         <div className="fixed bottom-4 right-4 z-40 flex flex-col items-end" dir="rtl">
           <button
             type="button"
             onClick={() => {
-              if (currentUser?.role === 'admin' && onOpenAdminSupport) {
+              if ((currentUser?.role === 'admin' || currentUser?.email?.toLowerCase() === 'hos098sam@gmail.com') && onOpenAdminSupport) {
                 onOpenAdminSupport();
                 return;
               }
               setIsOpen(true);
               setUnreadCount(0);
             }}
-            className="group relative flex items-center gap-2 px-3.5 py-2 rounded-full bg-gradient-to-r from-indigo-950 via-indigo-800 to-amber-500 text-white shadow-xl shadow-indigo-950/40 border border-amber-400/70 hover:scale-105 active:scale-95 transition-all duration-300 cursor-pointer"
+            title="الدعم الفني المباشر"
+            aria-label="الدعم الفني المباشر"
+            className="group relative w-12 h-12 sm:w-13 sm:h-13 rounded-full bg-gradient-to-br from-indigo-950 via-indigo-800 to-amber-500 text-white shadow-xl shadow-indigo-950/40 border-2 border-amber-400/80 hover:scale-105 active:scale-95 transition-all duration-300 flex items-center justify-center cursor-pointer"
           >
             {/* Icon Container */}
-            <div className="relative w-7 h-7 rounded-full bg-amber-400 text-slate-950 flex items-center justify-center shadow-xs shrink-0 group-hover:rotate-6 transition-transform">
+            <div className="relative w-8 h-8 rounded-full bg-amber-400 text-slate-950 flex items-center justify-center shadow-xs shrink-0 group-hover:rotate-6 transition-transform">
               <Headset className="w-4 h-4 stroke-[2.5]" />
               <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-slate-950 animate-pulse" />
             </div>
-
-            {/* Label */}
-            <span className="font-black text-[11px] sm:text-xs tracking-wide text-white pl-0.5">
-              الدعم الفني المباشر
-            </span>
 
             {/* Unread Notification Badge */}
             {unreadCount > 0 && (

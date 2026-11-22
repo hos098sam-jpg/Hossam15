@@ -147,10 +147,10 @@ export function safeSetLocalStorage(key: string, value: string): boolean {
       try {
         // Clean non-essential cached keys
         const nonEssentialKeys = [
-          'qalb_alam_cached_logs',
-          'qalb_alam_temp_draft',
-          'qalb_alam_notifications_cache',
-          'qalb_alam_exams_store',
+          'al_motafalsifa_cached_logs',
+          'al_motafalsifa_temp_draft',
+          'al_motafalsifa_notifications_cache',
+          'al_motafalsifa_exams_store',
         ];
         nonEssentialKeys.forEach((k) => {
           if (k !== key) {

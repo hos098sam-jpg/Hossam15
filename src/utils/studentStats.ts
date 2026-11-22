@@ -98,27 +98,15 @@ export interface GradeAggregateStats {
 }
 
 export const OFFICIAL_SCHOOL_GRADES = [
-  'الصف الأول الابتدائي',
-  'الصف الثاني الابتدائي',
-  'الصف الثالث الابتدائي',
-  'الصف الرابع الابتدائي',
-  'الصف الخامس الابتدائي',
-  'الصف السادس الابتدائي',
-  'الصف الأول الإعدادي',
-  'الصف الثاني الإعدادي',
-  'الصف الثالث الإعدادي',
   'الصف الأول الثانوي',
-  'الصف الثاني الثانوي',
-  'الصف الثالث الثانوي',
 ] as const;
 
 /**
- * Checks whether a grade is Primary (المرحلة الابتدائية) or Prep (المرحلة الإعدادية)
+ * Checks whether a grade is First Secondary only platform helper (always false)
  * where there is NO division (بدون شعبة)
  */
-export function isPrimaryOrPrepGrade(gradeStr: string | undefined): boolean {
-  if (!gradeStr) return false;
-  return gradeStr.includes('الابتدائي') || gradeStr.includes('الإعدادي') || gradeStr.includes('ابتدائي') || gradeStr.includes('إعدادي') || gradeStr.includes('اعدادي');
+export function isPrimaryOrPrepGrade(_gradeStr: string | undefined): boolean {
+  return false;
 }
 
 /**
@@ -126,15 +114,14 @@ export function isPrimaryOrPrepGrade(gradeStr: string | undefined): boolean {
  */
 export function isSecondaryGrade(gradeStr: string | undefined): boolean {
   if (!gradeStr) return false;
-  return gradeStr.includes('الثانوي') || gradeStr.includes('ثانوي') || gradeStr.includes('بكالوريا');
+  return gradeStr.includes('الأول الثانوي') || gradeStr.includes('ثانوي');
 }
 
 /**
- * Checks whether a grade is 3rd Secondary (الصف الثالث الثانوي)
+ * Checks whether a grade is First Secondary only platform helper (always false)
  */
-export function isThirdSecondaryGrade(gradeStr: string | undefined): boolean {
-  if (!gradeStr) return false;
-  return gradeStr.includes('الثالث الثانوي') || gradeStr.includes('3 ثانوي') || gradeStr.includes('تالتة ثانوي') || gradeStr.includes('ثالثة ثانوي') || gradeStr.includes('بكالوريا');
+export function isThirdSecondaryGrade(_gradeStr: string | undefined): boolean {
+  return false;
 }
 
 /**
@@ -171,18 +158,7 @@ export function getDivisionsForGrade(gradeStr: string | undefined, includeGenera
 export function normalizeGrade(gradeStr: string | undefined): string {
   if (!gradeStr) return 'غير محدد';
   const trimmed = gradeStr.trim();
-  if (trimmed.includes('الأول الابتدائي') || trimmed.includes('1 ابتدائي') || trimmed.includes('اولى ابتدائي') || trimmed.includes('أولى ابتدائي')) return 'الصف الأول الابتدائي';
-  if (trimmed.includes('الثاني الابتدائي') || trimmed.includes('2 ابتدائي') || trimmed.includes('تانية ابتدائي') || trimmed.includes('ثانية ابتدائي')) return 'الصف الثاني الابتدائي';
-  if (trimmed.includes('الثالث الابتدائي') || trimmed.includes('3 ابتدائي') || trimmed.includes('تالتة ابتدائي') || trimmed.includes('ثالثة ابتدائي')) return 'الصف الثالث الابتدائي';
-  if (trimmed.includes('الرابع الابتدائي') || trimmed.includes('4 ابتدائي') || trimmed.includes('رابعة ابتدائي')) return 'الصف الرابع الابتدائي';
-  if (trimmed.includes('الخامس الابتدائي') || trimmed.includes('5 ابتدائي') || trimmed.includes('خامسة ابتدائي')) return 'الصف الخامس الابتدائي';
-  if (trimmed.includes('السادس الابتدائي') || trimmed.includes('6 ابتدائي') || trimmed.includes('سادسة ابتدائي') || trimmed.includes('ستة ابتدائي')) return 'الصف السادس الابتدائي';
-  if (trimmed.includes('الأول الإعدادي') || trimmed.includes('1 إعدادي') || trimmed.includes('اولى اعدادي') || trimmed.includes('أولى إعدادي')) return 'الصف الأول الإعدادي';
-  if (trimmed.includes('الثاني الإعدادي') || trimmed.includes('2 إعدادي') || trimmed.includes('تانية اعدادي') || trimmed.includes('ثانية إعدادي')) return 'الصف الثاني الإعدادي';
-  if (trimmed.includes('الثالث الإعدادي') || trimmed.includes('3 إعدادي') || trimmed.includes('تالتة اعدادي') || trimmed.includes('ثالثة إعدادي') || trimmed.includes('الشهادة الإعدادية')) return 'الصف الثالث الإعدادي';
   if (trimmed.includes('الأول الثانوي') || trimmed.includes('1 ثانوي') || trimmed.includes('اولى ثانوي') || trimmed.includes('أولى ثانوي')) return 'الصف الأول الثانوي';
-  if (trimmed.includes('الثاني الثانوي') || trimmed.includes('2 ثانوي') || trimmed.includes('تانية ثانوي') || trimmed.includes('ثانية ثانوي')) return 'الصف الثاني الثانوي';
-  if (trimmed.includes('الثالث الثانوي') || trimmed.includes('3 ثانوي') || trimmed.includes('تالتة ثانوي') || trimmed.includes('ثالثة ثانوي') || trimmed.includes('الثانوية العامة') || trimmed.includes('بكالوريا')) return 'الصف الثالث الثانوي';
   return trimmed;
 }
 

@@ -25,8 +25,7 @@ export function buildParentWhatsappReportText(
   const completedLessonsCount =
     student.completedLessonsIds?.length ||
     Object.keys(student.completedVideos || {}).length ||
-    student.watchedVideos ||
-    0;
+    (Array.isArray(student.watchedVideos) ? student.watchedVideos.length : (typeof student.watchedVideos === 'number' ? student.watchedVideos : 0));
   const studentSubs = submissions.filter(
     (s) =>
       String(s.studentId) === String(student.id) ||
@@ -54,7 +53,9 @@ export function buildParentWhatsappReportText(
               }`
           )
           .join('\n')
-      : student.completedExams && student.completedExams > 0
+      : Array.isArray(student.completedExams) && student.completedExams.length > 0
+      ? `• اجتاز ${student.completedExams.length} اختبارات إلكترونية بمتوسط تقييم ممتاز.`
+      : typeof student.completedExams === 'number' && student.completedExams > 0
       ? `• اجتاز ${student.completedExams} اختبارات إلكترونية بمتوسط تقييم ممتاز.`
       : '• لم يؤدِّ اختبارات إلكترونية مؤخراً.';
 
@@ -70,12 +71,12 @@ export function buildParentWhatsappReportText(
   });
 
   const signOff = teacherName
-    ? `*الأستاذ / ${teacherName} - منصة قلب العلم التعليمية*`
-    : `*إدارة منصة قلب العلم التعليمية - أ. حسام شحاته*`;
+    ? `*الأستاذة / ${teacherName} - منصة المتفلسفة التعليمية*`
+    : `*أ/ سوزان كريم فهمي - منصة المتفلسفة التعليمية*`;
 
   return `السلام عليكم ورحمة الله وبركاته 🌿
 تحية طيبة لولي أمر الطالب/ـة: *${student.name}* (${student.schoolYear || student.grade || 'المرحلة الثانوية'})
-نرسل لحضرتكم تقرير المتابعة العلمية من *منصة قلب العلم التعليمية* بتاريخ (${today}):
+نرسل لحضرتكم تقرير المتابعة العلمية من *منصة المتفلسفة التعليمية* بتاريخ (${today}):
 
 📊 *أولاً: الكورسات المشترك بها الطالب:*
 ${coursesListText}

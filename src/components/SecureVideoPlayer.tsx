@@ -42,6 +42,7 @@ import {
   extractVideoUrlFromTicket,
 } from '../utils/mediaUtils';
 import { getVideoProgress, saveVideoProgress, clearVideoProgress } from '../utils/videoProgress';
+import { getClientAuthHeaders } from '../utils/authToken';
 
 declare global {
   interface Window {
@@ -382,7 +383,8 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
     let isMounted = true;
     const authUrl = `/api/lessons/${encodeURIComponent(targetId)}/video-auth?studentId=${encodeURIComponent(currentUser?.id || 'preview_student')}`;
 
-    fetch(authUrl)
+    getClientAuthHeaders()
+      .then((headers) => fetch(authUrl, { headers }))
       .then((res) => res.json())
       .then((data) => {
         if (!isMounted) return;
@@ -418,9 +420,10 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
       setVcdnLoading(true);
       setVcdnError(null);
       try {
+        const headers = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
         const res = await fetch(`/api/vcdn/videos/${encodeURIComponent(vcdnVideoId)}/playback-token`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({
             studentId: currentUser?.id,
             studentName: currentUser?.name,
@@ -533,6 +536,8 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
 
   const [useMirror, setUseMirror] = useState<boolean>(false);
   const [ytSilentDirectUrl, setYtSilentDirectUrl] = useState<string | null>(null);
+  const signedUrlRef = useRef<string>('');
+  const signedBaseRef = useRef<string>('');
 
   const playableSrc = useMemo(() => {
     if (ytId && ytSilentDirectUrl) {
@@ -1635,6 +1640,64 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
       !activePlayableSource.includes('/api/video/stream/')
     );
 
+    const degooHash = extractDegooShareHash(effectiveRawUrl);
+    const directPlayableCandidate = isVcdn
+      ? (vcdnStreamUrl || (vcdnVideoId ? `/api/vcdn/stream/${encodeURIComponent(vcdnVideoId)}` : activePlayableSource))
+      : isStreamtape || isPixeldrain
+      ? platformSecure.streamUrl
+      : isAvcaption && avcaptionStreamUrl
+      ? avcaptionStreamUrl
+      : degooHash
+      ? `/api/video/stream/degoo_${degooHash}`
+      : activePlayableSource.startsWith('http') && !isDropbox
+      ? platformSecure.streamUrl
+      : playableDirectUrl;
+
+    const shouldUseSignedUrl = Boolean(
+      currentUser?.id &&
+      !isM3u8Stream &&
+      directPlayableCandidate &&
+      (directPlayableCandidate.includes('/api/video/stream/') ||
+        directPlayableCandidate.includes('/api/vcdn/stream/') ||
+        isVcdn ||
+        isStreamtape ||
+        isPixeldrain ||
+        Boolean(degooHash))
+    );
+
+    let isEffectActive = true;
+    let signRefreshTimer: ReturnType<typeof setInterval> | null = null;
+
+    const fetchSignedVideoUrl = async (targetRawUrl: string): Promise<{ url: string; forceLogout: boolean }> => {
+      if (!currentUser?.id) return { url: targetRawUrl, forceLogout: false };
+      try {
+        const headers = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
+        const signRes = await fetch('/api/video/sign-url', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            rawUrl: targetRawUrl,
+            videoId: video?.id || videoId,
+            sourceType: isVcdn ? 'vcdn' : 'direct',
+          }),
+        });
+        if (signRes.status === 401) {
+          return { url: '', forceLogout: true };
+        }
+        if (signRes.ok) {
+          const signData = await signRes.json().catch(() => null);
+          if (signData?.signedUrl) {
+            signedUrlRef.current = signData.signedUrl;
+            signedBaseRef.current = targetRawUrl;
+            return { url: signData.signedUrl, forceLogout: false };
+          }
+        }
+      } catch {
+        // fallback to unsigned internal URL if network hiccups
+      }
+      return { url: targetRawUrl, forceLogout: false };
+    };
+
     if (isM3u8Stream && Hls.isSupported() && activePlayableSource) {
       let hlsNetworkRetried = false;
       const hls = new Hls({
@@ -1670,7 +1733,7 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
           }
           if (url && url.includes('/api/github-hls/')) {
             try {
-              xhr.setRequestHeader('X-Qalb-Key-Shield', 'qalb-aes128-guard-v2');
+              xhr.setRequestHeader('X-AlMotafalsifa-Key-Shield', 'mtaf-aes128-guard-v2');
               xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
             } catch {}
           }
@@ -1838,21 +1901,47 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
       videoEl.load();
     } else {
       // Direct MP4 / WebM / Streamtape Encrypted Stream / Local VCDN Stream / Degoo Stream / AVCaption Direct Stream
-      const degooHash = extractDegooShareHash(effectiveRawUrl);
-      const playableSrc = isVcdn
-        ? (vcdnStreamUrl || (vcdnVideoId ? `/api/vcdn/stream/${encodeURIComponent(vcdnVideoId)}` : activePlayableSource))
-        : isStreamtape || isPixeldrain
-        ? platformSecure.streamUrl
-        : isAvcaption && avcaptionStreamUrl
-        ? avcaptionStreamUrl
-        : degooHash
-        ? `/api/video/stream/degoo_${degooHash}`
-        : activePlayableSource.startsWith('http') && !isDropbox
-        ? platformSecure.streamUrl
-        : playableDirectUrl;
-      videoEl.src = playableSrc;
-      videoEl.preload = 'auto';
-      videoEl.load();
+      // Use short-lived Signed URLs (svt, 3-minute TTL bound to current_session_token & device fingerprint)
+      if (shouldUseSignedUrl) {
+        (async () => {
+          const signedRes = await fetchSignedVideoUrl(directPlayableCandidate);
+          if (!isEffectActive) return;
+          if (signedRes.forceLogout) {
+            try {
+              videoEl.pause();
+              videoEl.removeAttribute('src');
+              videoEl.load();
+            } catch {}
+            setIsPlaying(false);
+            setLoading(false);
+            setError('تم تسجيل الدخول من جهاز آخر');
+            return;
+          }
+          videoEl.src = signedRes.url || directPlayableCandidate;
+          videoEl.preload = 'auto';
+          videoEl.load();
+        })();
+
+        // Refresh short-lived Signed URL & verify active session every 120s (expires every 180s)
+        signRefreshTimer = setInterval(async () => {
+          if (!isEffectActive) return;
+          const renewed = await fetchSignedVideoUrl(directPlayableCandidate);
+          if (!isEffectActive) return;
+          if (renewed.forceLogout) {
+            try {
+              videoEl.pause();
+              videoEl.removeAttribute('src');
+              videoEl.load();
+            } catch {}
+            setIsPlaying(false);
+            setError('تم تسجيل الدخول من جهاز آخر');
+          }
+        }, 120000);
+      } else {
+        videoEl.src = directPlayableCandidate;
+        videoEl.preload = 'auto';
+        videoEl.load();
+      }
     }
 
     const fallbackReadyTimer = setTimeout(() => {
@@ -1863,6 +1952,7 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
     let streamtapeRetried = false;
     let pixeldrainRetried = false;
     let vcdnDirectRetried = false;
+    let signedUrlRetried = false;
 
     const handleLoadedMetadata = () => {
       setDuration(videoEl.duration || 0);
@@ -1985,16 +2075,47 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
       setLoading(false);
     };
 
-    const handleErr = () => {
+    const handleErr = async () => {
       console.warn('[Video Player Error] Direct playback error for:', effectiveRawUrl);
       if (typeof navigator !== 'undefined' && !navigator.onLine) {
         triggerNetworkBlackout();
         return;
       }
+      if (shouldUseSignedUrl && !signedUrlRetried) {
+        signedUrlRetried = true;
+        const resumeAt = videoEl.currentTime || 0;
+        const renewed = await fetchSignedVideoUrl(directPlayableCandidate);
+        if (!isEffectActive) return;
+        if (renewed.forceLogout) {
+          try {
+            videoEl.pause();
+            videoEl.removeAttribute('src');
+            videoEl.load();
+          } catch {}
+          setIsPlaying(false);
+          setLoading(false);
+          setError('تم تسجيل الدخول من جهاز آخر');
+          return;
+        }
+        if (renewed.url) {
+          videoEl.src = renewed.url;
+          videoEl.load();
+          if (resumeAt > 1) {
+            try { videoEl.currentTime = resumeAt; } catch {}
+          }
+          videoEl.play().then(() => setIsPlaying(true)).catch(() => {});
+          return;
+        }
+      }
       if (isVcdn && vcdnVideoId && !vcdnDirectRetried) {
         vcdnDirectRetried = true;
         const freshUrl = `/api/vcdn/stream/${encodeURIComponent(vcdnVideoId)}?retry=${Date.now()}`;
-        videoEl.src = freshUrl;
+        const signed = shouldUseSignedUrl ? await fetchSignedVideoUrl(freshUrl) : { url: freshUrl, forceLogout: false };
+        if (signed.forceLogout) {
+          setError('تم تسجيل الدخول من جهاز آخر');
+          return;
+        }
+        videoEl.src = signed.url || freshUrl;
         videoEl.load();
         videoEl.play().then(() => setIsPlaying(true)).catch(() => {});
         return;
@@ -2030,7 +2151,9 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
     videoEl.addEventListener('error', handleErr);
 
     return () => {
+      isEffectActive = false;
       clearTimeout(fallbackReadyTimer);
+      if (signRefreshTimer) clearInterval(signRefreshTimer);
       if (stallTimerRef.current) clearTimeout(stallTimerRef.current);
       videoEl.removeEventListener('loadedmetadata', handleLoadedMetadata);
       videoEl.removeEventListener('canplay', handleCanPlay);
@@ -2050,7 +2173,7 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
         hlsRef.current = null;
       }
     };
-  }, [effectiveRawUrl, playerMode, isHls, isTeraBox, isAvcaption, avcaptionStreamUrl, isStreamtape, isPixeldrain, isVcdn, vcdnStreamUrl]);
+  }, [effectiveRawUrl, playerMode, isHls, isTeraBox, isAvcaption, avcaptionStreamUrl, isStreamtape, isPixeldrain, isVcdn, vcdnStreamUrl, currentUser?.id]);
 
   // Fullscreen and Landscape Orientation Management
   const enterLandscapeFullscreen = async () => {
@@ -2629,8 +2752,8 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
     : currentUser?.email
     ? `طالب: ${currentUser.name || 'طالب المنصة'} - ${currentUser.email}`
     : videoId
-    ? `طالب منصة قلب العلم - ID: ${videoId}`
-    : 'منصة قلب العلم - محتوى محمي';
+    ? `طالب منصة المتفلسفة  - ID: ${videoId}`
+    : 'منصة المتفلسفة  - محتوى محمي';
 
   const retryPlayback = () => {
     setLoading(true);
@@ -2728,7 +2851,8 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
             <button
               onClick={async () => {
                 if (vcdnVideoId) {
-                  await fetch(`/api/vcdn/videos/${encodeURIComponent(vcdnVideoId)}/mark-ready`, { method: 'POST' }).catch(() => {});
+                  const headers = await getClientAuthHeaders();
+                  await fetch(`/api/vcdn/videos/${encodeURIComponent(vcdnVideoId)}/mark-ready`, { method: 'POST', headers }).catch(() => {});
                 }
                 setVcdnStatus('ready');
                 retryPlayback();
@@ -2893,7 +3017,7 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
                 allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
                 sandbox="allow-scripts allow-same-origin allow-forms"
                 referrerPolicy="no-referrer"
-                title="مشغل منصة قلب العلم الخاص - بدون إعلانات"
+                title="مشغل منصة المتفلسفة  الخاص - بدون إعلانات"
                 onLoad={() => setLoading(false)}
               />
             </div>
@@ -3216,7 +3340,7 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             sandbox="allow-scripts allow-same-origin allow-forms allow-presentation allow-popups"
             referrerPolicy={isAvcaption ? 'origin-when-cross-origin' : isDood ? 'origin' : 'no-referrer'}
-            title="مشغل منصة قلب العلم الخاص"
+            title="مشغل منصة المتفلسفة  الخاص"
             onLoad={() => setLoading(false)}
           />
           {/* Floating Fullscreen & Mirror Buttons */}
@@ -3269,7 +3393,7 @@ export const SecureVideoPlayer: React.FC<SecureVideoPlayerProps> = ({
               >
                 <span className="text-[10px] text-slate-300 font-bold flex items-center gap-1.5">
                   <Lock className="w-3.5 h-3.5 text-amber-400" />
-                  <span>قلب العلم</span>
+                  <span>المتفلسفة </span>
                 </span>
               </div>
 

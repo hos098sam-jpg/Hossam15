@@ -38,7 +38,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   onNavigate,
   onLogout,
 }) => {
-  const teacherSubject = currentTeacher.subject || 'مادة عامة';
+  const teacherSubject = 'الفلسفة';
   const teacherSpecialty = currentTeacher.specialty || 'عام لجميع الشعب';
 
   // Teacher's courses (filtered to only those created by or assigned to this teacher)
@@ -56,7 +56,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   // Form states for adding/editing course
   const [courseTitle, setCourseTitle] = useState('');
   const [courseType, setCourseType] = useState<CourseType>('integrated');
-  const [courseYear, setCourseYear] = useState<SchoolYearGrade>('الصف الثالث الثانوي');
+  const [courseYear, setCourseYear] = useState<SchoolYearGrade>('الصف الأول الثانوي');
   const [courseDivision, setCourseDivision] = useState<string>(teacherSpecialty);
   const [coursePrice, setCoursePrice] = useState<number>(0);
   const [courseDescription, setCourseDescription] = useState('');
@@ -202,7 +202,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     setEditingCourse(null);
     setCourseTitle('');
     setCourseType('integrated');
-    setCourseYear('الصف الثالث الثانوي');
+    setCourseYear('الصف الأول الثانوي');
     setCourseDivision(teacherSpecialty);
     setCoursePrice(0);
     setCourseDescription('');
@@ -233,11 +233,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       return;
     }
 
-    // Enforce division rules (No division for Primary & Prep)
-    const isPrimaryOrPrep = courseYear.includes('الابتدائي') || courseYear.includes('الإعدادي');
-    const effectiveDivision = isPrimaryOrPrep
-      ? ''
-      : courseDivision || (courseYear.includes('الثالث الثانوي') ? 'علمي علوم' : 'بكالوريا');
+    const effectiveDivision = courseDivision || 'بكالوريا';
 
     if (editingCourse) {
       // Update existing
@@ -903,7 +899,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className={(courseYear.includes('الابتدائي') || courseYear.includes('الإعدادي')) ? 'sm:col-span-2' : ''}>
+                <div >
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                     السنة الدراسية:
                   </label>
@@ -912,57 +908,20 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                     onChange={(e) => {
                       const newGrade = e.target.value as SchoolYearGrade;
                       setCourseYear(newGrade);
-                      if (newGrade.includes('الابتدائي') || newGrade.includes('الإعدادي')) {
-                        setCourseDivision('');
-                      } else if (newGrade.includes('الثالث الثانوي')) {
-                        setCourseDivision('علمي علوم');
-                      } else {
-                        setCourseDivision('بكالوريا');
-                      }
+                      setCourseDivision('بكالوريا');
                     }}
                     className="w-full p-3 rounded-2xl border border-slate-200 dark:border-slate-700 text-xs bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
                   >
-                    <optgroup label="المرحلة الابتدائية (بدون شعبة)">
-                      <option value="الصف الأول الابتدائي">الصف الأول الابتدائي</option>
-                      <option value="الصف الثاني الابتدائي">الصف الثاني الابتدائي</option>
-                      <option value="الصف الثالث الابتدائي">الصف الثالث الابتدائي</option>
-                      <option value="الصف الرابع الابتدائي">الصف الرابع الابتدائي</option>
-                      <option value="الصف الخامس الابتدائي">الصف الخامس الابتدائي</option>
-                      <option value="الصف السادس الابتدائي">الصف السادس الابتدائي</option>
-                    </optgroup>
-                    <optgroup label="المرحلة الإعدادية (بدون شعبة)">
-                      <option value="الصف الأول الإعدادي">الصف الأول الإعدادي</option>
-                      <option value="الصف الثاني الإعدادي">الصف الثاني الإعدادي</option>
-                      <option value="الصف الثالث الإعدادي">الصف الثالث الإعدادي</option>
-                    </optgroup>
-                    <optgroup label="المرحلة الثانوية">
-                      <option value="الصف الأول الثانوي">الصف الأول الثانوي</option>
-                      <option value="الصف الثاني الثانوي">الصف الثاني الثانوي</option>
-                      <option value="الصف الثالث الثانوي">الصف الثالث الثانوي</option>
-                    </optgroup>
+                    <option value="الصف الأول الثانوي">الصف الأول الثانوي — مادة الفلسفة</option>
                   </select>
                 </div>
 
-                {!(courseYear.includes('الابتدائي') || courseYear.includes('الإعدادي')) && (
+                {true && (
                   <div className="animate-fadeIn">
                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                      {courseYear.includes('الثالث الثانوي') ? 'الشعبة (تالتة ثانوي):' : 'الشعبة (المرحلة الثانوية):'}
+                      الشعبة (الصف الأول الثانوي):
                     </label>
-                    {courseYear.includes('الثالث الثانوي') ? (
-                      <select
-                        value={courseDivision}
-                        onChange={(e) => setCourseDivision(e.target.value)}
-                        className="w-full p-3 rounded-2xl border border-slate-200 dark:border-slate-700 text-xs bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
-                      >
-                        <option value="علمي علوم">علمي علوم</option>
-                        <option value="علمي رياضة">علمي رياضة</option>
-                        <option value="شعبة أدبي">شعبة أدبي</option>
-                        <option value="بكالوريا">بكالوريا</option>
-                        <option value="عام">عام</option>
-                        <option value="أزهر">أزهر</option>
-                        <option value="عام لجميع الشعب">عام لجميع الشعب</option>
-                      </select>
-                    ) : (
+                    {(
                       <select
                         value={courseDivision}
                         onChange={(e) => setCourseDivision(e.target.value)}

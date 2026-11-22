@@ -16,20 +16,31 @@ import {
   IdCard,
   MapPin,
   Check,
-  RotateCcw
+  RotateCcw,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { User, AppView } from '../types';
-import { signupWithEmail } from '../auth';
+import { signupWithEmail, getIdToken } from '../auth';
 import { getSavedUsers, saveUsers, saveCurrentUser } from '../data/initialData';
+import { saveServerAuthToken, saveSessionToken } from '../utils/authToken';
+import { getDeviceInfoPayload } from '../utils/deviceFingerprint';
 import registerIllustration from '../assets/images/register_page_illustration_1790724483777.jpg';
-import qalbAlElmLogo from '../assets/images/qalb_alelm_official_logo_1791663594965.jpg';
+const motafalsifaLogo = '/logo.png';
 
 interface SignupPageProps {
   onNavigate: (view: AppView) => void;
   onAuthSuccess: (user: User) => void;
+  theme?: 'light' | 'dark';
+  onToggleTheme?: () => void;
 }
 
-export const SignupPage: React.FC<SignupPageProps> = ({ onNavigate, onAuthSuccess }) => {
+export const SignupPage: React.FC<SignupPageProps> = ({
+  onNavigate,
+  onAuthSuccess,
+  theme = 'light',
+  onToggleTheme,
+}) => {
   // Step State: 1 (30%), 2 (60%), 3 (100%)
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
@@ -39,8 +50,8 @@ export const SignupPage: React.FC<SignupPageProps> = ({ onNavigate, onAuthSucces
   const [thirdName, setThirdName] = useState('');
   const [lastName, setLastName] = useState('');
   const [phone, setPhone] = useState('');
-  const [schoolYear, setSchoolYear] = useState('الصف الثالث الثانوي');
-  const [division, setDivision] = useState('علمي علوم');
+  const [schoolYear, setSchoolYear] = useState('الصف الأول الثانوي');
+  const [division, setDivision] = useState('عام');
 
   // Step 2: Parent & School Info
   const [fatherPhone, setFatherPhone] = useState('');
@@ -118,13 +129,11 @@ export const SignupPage: React.FC<SignupPageProps> = ({ onNavigate, onAuthSucces
 
     try {
       const cleanPhone = phone.replace(/\D/g, '');
-      const targetEmail = email.trim() || `${cleanPhone}@qalbalelm.edu`;
+      const targetEmail = email.trim() || `${cleanPhone}@al-motafalsifa.edu`;
+      const effectiveDivision = division;
 
-      const isPrimaryOrPrep = schoolYear.includes('الابتدائي') || schoolYear.includes('الإعدادي');
-      const effectiveDivision = isPrimaryOrPrep ? undefined : division;
-
-      // 1. Create in Firebase Auth or local store
-      let newUser: User;
+      let newUser: User | null = null;
+      let fbSucceeded = false;
       try {
         const res = await signupWithEmail(targetEmail, password, {
           name: fullName,
@@ -147,11 +156,31 @@ export const SignupPage: React.FC<SignupPageProps> = ({ onNavigate, onAuthSucces
           status: 'active',
         });
         newUser = res.profile;
+        fbSucceeded = true;
       } catch (authErr: any) {
-        // Fallback local create if network or offline
-        console.warn('Firebase signup notice:', authErr);
-        newUser = {
-          id: `student_${Date.now()}`,
+        if (authErr?.code === 'auth/email-already-in-use') {
+          setError('رقم الهاتف أو البريد الإلكتروني هذا مسجل بالفعل. يرجى تسجيل الدخول.');
+          setLoading(false);
+          return;
+        }
+        console.warn('Firebase signup notice, continuing via server signup:', authErr);
+      }
+
+      // Persist & obtain signed HMAC token + UUID current_session_token from server
+      const deviceInfo = await getDeviceInfoPayload().catch(() => ({
+        deviceId: '',
+        deviceName: '',
+        fingerprintHash: '',
+      }));
+      const fbToken = fbSucceeded ? await getIdToken().catch(() => null) : null;
+      const signupRes = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(fbToken ? { Authorization: `Bearer ${fbToken}` } : {}),
+        },
+        body: JSON.stringify({
+          ...(newUser?.id ? { id: newUser.id, uid: newUser.id } : {}),
           name: fullName,
           firstName: firstName.trim(),
           secondName: secondName.trim(),
@@ -161,8 +190,6 @@ export const SignupPage: React.FC<SignupPageProps> = ({ onNavigate, onAuthSucces
           parentPhone: fatherPhone.trim() || motherPhone.trim(),
           fatherPhone: fatherPhone.trim(),
           motherPhone: motherPhone.trim(),
-          email: targetEmail,
-          password: password,
           schoolYear,
           division: effectiveDivision,
           schoolName: schoolName.trim(),
@@ -170,22 +197,43 @@ export const SignupPage: React.FC<SignupPageProps> = ({ onNavigate, onAuthSucces
           educationSystem,
           gender,
           religion,
-          role: 'student',
-          status: 'active',
-          registeredAt: new Date().toISOString().split('T')[0],
-          enrolledCourseIds: [],
+          email: targetEmail,
+          password,
+          deviceId: deviceInfo.deviceId,
+          deviceName: deviceInfo.deviceName,
+          deviceFingerprint: deviceInfo.fingerprintHash,
+          syncFromFirebaseAuth: fbSucceeded,
+        }),
+      });
+
+      const signupData = await signupRes.json().catch(() => ({}));
+      if (signupRes.ok && signupData?.user) {
+        if (signupData.token) {
+          saveServerAuthToken(signupData.token);
+        }
+        const issuedSessionToken = signupData.current_session_token || signupData.sessionId || '';
+        if (issuedSessionToken) {
+          saveSessionToken(issuedSessionToken);
+        }
+        newUser = {
+          ...(signupData.user as User),
+          ...(issuedSessionToken
+            ? { current_session_token: issuedSessionToken, activeSessionId: issuedSessionToken }
+            : {}),
+          ...(deviceInfo.fingerprintHash ? { device_fingerprint: deviceInfo.fingerprintHash } : {}),
         };
+      } else if (!newUser) {
+        throw new Error(signupData?.error || 'تعذر إنشاء الحساب على الخادم.');
       }
 
-      // Save to local list
       const prevUsers = getSavedUsers();
-      const updatedList = [newUser, ...prevUsers.filter((u) => u.id !== newUser.id)];
+      const updatedList = [newUser, ...prevUsers.filter((u) => u.id !== newUser!.id)];
       saveUsers(updatedList);
       saveCurrentUser(newUser);
 
       setSuccessMsg('🎉 تم إنشاء حسابك بنجاح! يتم الآن توجيهك للمنصة...');
       setTimeout(() => {
-        onAuthSuccess(newUser);
+        onAuthSuccess(newUser!);
       }, 1000);
     } catch (err: any) {
       setError(err.message || 'حدث خطأ أثناء إنشاء الحساب. يرجى المحاولة مرة أخرى.');
@@ -196,246 +244,204 @@ export const SignupPage: React.FC<SignupPageProps> = ({ onNavigate, onAuthSucces
 
   return (
     <div
-      className="min-h-screen w-full bg-[#060b1e] text-white flex flex-col justify-between selection:bg-blue-600 selection:text-white relative overflow-x-hidden"
+      className="min-h-screen w-full theme-page-bg bg-[#F3F4F6] dark:bg-[#0D0D0F] text-[#151515] dark:text-[#F4F4F5] flex flex-col justify-between selection:bg-[#E31B23]/15 selection:text-[#E31B23] relative overflow-x-clip transition-colors duration-200"
       dir="rtl"
     >
-      {/* Background Glow */}
-      <div className="absolute top-0 right-1/4 w-96 h-96 bg-blue-600/15 rounded-full blur-[140px] pointer-events-none" />
-      <div className="absolute bottom-0 left-1/4 w-[500px] h-[500px] bg-indigo-700/15 rounded-full blur-[160px] pointer-events-none" />
-
-      {/* Header Bar */}
-      <header className="relative z-20 max-w-7xl mx-auto w-full px-4 sm:px-8 py-5 flex items-center justify-between">
-        <button
-          onClick={() => onNavigate('home')}
-          className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs sm:text-sm font-black transition-all cursor-pointer shadow-lg backdrop-blur-md text-slate-200 hover:text-white"
-        >
-          <Home className="w-4 h-4 text-blue-400" />
-          <span>الرئيسية</span>
-        </button>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => onNavigate('login')}
-            className="text-xs sm:text-sm font-bold text-blue-300 hover:text-white transition-colors cursor-pointer"
-          >
-            لديك حساب بالفعل؟ <b>تسجيل الدخول</b>
-          </button>
-        </div>
-      </header>
+      {/* Subtle Ambient Glow */}
+      <div className="absolute top-0 right-1/4 w-96 h-96 bg-[#E31B23]/10 rounded-full blur-[140px] pointer-events-none" />
+      <div className="absolute bottom-0 left-1/4 w-[500px] h-[500px] bg-[#1769D2]/10 rounded-full blur-[160px] pointer-events-none" />
 
       {/* Main Full Page Stage: 2-Columns Layout with Generated Artwork */}
-      <main className="relative z-10 max-w-7xl mx-auto w-full px-4 sm:px-8 py-4 sm:py-8 flex-1 flex items-center justify-center">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center w-full">
-          {/* LEFT COLUMN: 3D Cute Student Illustration at Desk with glowing Emblem */}
-          <div className="hidden lg:flex lg:col-span-5 flex-col items-center justify-center text-center relative select-none">
-            <div className="relative w-full max-w-md rounded-3xl overflow-hidden shadow-2xl border border-blue-500/30 group">
+      <main className="relative z-10 max-w-5xl mx-auto w-full px-4 sm:px-6 py-4 sm:py-6 flex-1 flex items-center justify-center">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8 items-stretch max-w-[870px] mx-auto w-full">
+          {/* Illustration Column (Swapped to left side on desktop) */}
+          <div className="hidden lg:flex lg:order-2 flex-col items-center justify-center text-center relative select-none">
+            <div className="relative w-full max-w-[410px] h-full rounded-3xl overflow-hidden shadow-2xl border border-[#E31B23]/30 bg-[#0B0B0F] group flex">
               <img
                 src={registerIllustration}
-                alt="إنشاء حساب جديد - منصة قلب العلم"
-                className="w-full h-auto object-cover transform transition-transform duration-700 group-hover:scale-105"
+                alt="إنشاء حساب جديد - منصة المتفلسفة"
+                className="w-full h-full object-cover object-center transform transition-transform duration-700 group-hover:scale-105"
               />
 
-              <div className="absolute top-4 right-4 bg-slate-950/80 backdrop-blur-md px-3.5 py-1.5 rounded-2xl border border-blue-400/40 text-blue-300 text-xs font-black flex items-center gap-2 shadow-xl">
-                <Sparkles className="w-4 h-4 text-amber-300" />
-                <span>انضم لأسرة قلب العلم 🌟</span>
+              <div className="absolute top-3 right-3 bg-[#0B0B0F]/85 backdrop-blur-md px-3 py-1 rounded-xl border border-[#E31B23]/40 text-white text-[11px] font-bold flex items-center gap-1.5 shadow-lg">
+                <Sparkles className="w-3.5 h-3.5 text-[#E31B23]" />
+                <span>انضم لأسرة المتفلسفة</span>
               </div>
 
-              <div className="absolute bottom-4 inset-x-4 bg-gradient-to-t from-slate-950 via-slate-950/80 to-transparent p-4 rounded-2xl text-right">
-                <p className="text-sm font-black text-white">رحلة التفوق تبدأ من هنا</p>
-                <p className="text-xs text-blue-200/80 mt-0.5">
-                  امتحانات تفاعلية، فيديوهات عالية الجودة، ومتابعة دقيقة لكل درس
+              <div className="absolute bottom-3 inset-x-3 bg-[#0B0B0F]/85 backdrop-blur-md p-3.5 rounded-2xl border border-white/10 text-right">
+                <p className="font-display text-xs font-extrabold text-white">رحلة التفوق تبدأ من هنا</p>
+                <p className="text-[11px] text-neutral-300 mt-0.5 leading-snug">
+                  امتحانات تفاعلية، فيديوهات عالية الجودة، ومتابعة دقيقة لكل درس مع أ/ سوزان كريم فهمي
                 </p>
               </div>
             </div>
           </div>
 
-          {/* RIGHT COLUMN: Multi-Step Registration Form */}
-          <div className="col-span-1 lg:col-span-7 flex justify-center w-full">
-            <div className="w-full max-w-xl bg-[#0b132b]/95 border border-blue-500/40 rounded-[32px] p-6 sm:p-9 shadow-2xl shadow-blue-900/30 backdrop-blur-xl relative overflow-hidden text-right">
-              {/* Top Neon Title */}
-              <div className="flex items-center justify-between gap-4 mb-6 pb-4 border-b border-white/10">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-white border border-blue-400/50 flex items-center justify-center shadow-md overflow-hidden shrink-0">
-                    <img
-                      src={qalbAlElmLogo}
-                      alt="شعار منصة قلب العلم"
-                      referrerPolicy="no-referrer"
-                      className="w-full h-full object-cover"
-                    />
+          {/* Multi-Step Registration Form Column (Swapped to primary right side on desktop) */}
+          <div className="col-span-1 lg:order-1 flex justify-center w-full">
+            <div className="w-full max-w-[410px] lg:min-h-[430px] theme-surface bg-white dark:bg-[#16161A] border border-neutral-200 dark:border-neutral-800 rounded-3xl p-5 sm:p-6 shadow-xl relative overflow-hidden text-right flex flex-col justify-center">
+              <div className="flex items-center justify-between gap-2 mb-3">
+                <button
+                  type="button"
+                  onClick={() => onNavigate('home')}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#F3F4F6] dark:bg-[#0D0D0F] hover:bg-neutral-200 dark:hover:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-[11px] font-bold text-[#151515] dark:text-neutral-200 transition-colors cursor-pointer"
+                >
+                  <Home className="w-3.5 h-3.5 text-[#E31B23]" />
+                  <span>الرئيسية</span>
+                </button>
+                <div className="flex items-center gap-1.5">
+                  <div className="font-mono-num px-2.5 py-1 rounded-lg bg-[#1769D2]/10 border border-[#1769D2]/25 text-[#1769D2] text-[10px] font-extrabold">
+                    {step === 1 ? 'المرحلة 1 / 3' : step === 2 ? 'المرحلة 2 / 3' : 'المرحلة 3 / 3'}
                   </div>
-                  <div>
-                    <h2 className="text-xl sm:text-2xl font-black text-white">إنشاء حساب طالب جديد</h2>
-                    <p className="text-xs text-blue-300 font-medium">منصة قلب العلم التعليمية 2027</p>
-                  </div>
+                  {onToggleTheme && (
+                    <button
+                      type="button"
+                      onClick={onToggleTheme}
+                      className="inline-flex items-center gap-1 px-2 py-1.5 rounded-xl bg-[#F3F4F6] dark:bg-[#0D0D0F] hover:bg-neutral-200 dark:hover:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-[11px] font-bold text-[#151515] dark:text-amber-300 transition-colors cursor-pointer"
+                      title={theme === 'dark' ? 'التحويل للوضع الفاتح' : 'التحويل للوضع الغامق'}
+                      aria-label={theme === 'dark' ? 'التحويل للوضع الفاتح' : 'التحويل للوضع الغامق'}
+                    >
+                      {theme === 'dark' ? (
+                        <Sun className="w-3.5 h-3.5 text-amber-400" />
+                      ) : (
+                        <Moon className="w-3.5 h-3.5 text-[#1769D2]" />
+                      )}
+                    </button>
+                  )}
                 </div>
-
-                {/* Step percentage badge */}
-                <div className="px-3.5 py-1.5 rounded-full bg-blue-500/20 border border-blue-400/40 text-blue-300 text-xs font-black">
-                  {step === 1 ? 'المرحلة 1 من 3 (30%)' : step === 2 ? 'المرحلة 2 من 3 (60%)' : 'المرحلة الأخيرة (100%)'}
+              </div>
+              {/* Top Brand Title */}
+              <div className="flex items-center gap-3 mb-3 pb-3 border-b border-neutral-200 dark:border-neutral-800">
+                <div className="w-9 h-9 rounded-xl bg-[#0B0B0F] border border-neutral-200 dark:border-neutral-700 flex items-center justify-center shadow-sm overflow-hidden shrink-0">
+                  <img
+                    src={motafalsifaLogo}
+                    alt="شعار منصة المتفلسفة"
+                    referrerPolicy="no-referrer"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <div>
+                  <h2 className="font-display text-sm sm:text-base font-extrabold text-[#151515] dark:text-white">إنشاء حساب طالب جديد</h2>
+                  <p className="text-[11px] text-[#1769D2] font-semibold">منصة المتفلسفة التعليمية 2027</p>
                 </div>
               </div>
 
               {/* Progress bar line */}
-              <div className="w-full h-2 bg-slate-800 rounded-full mb-6 overflow-hidden">
+              <div className="w-full h-1.5 bg-neutral-200 dark:bg-neutral-800 rounded-full mb-3 overflow-hidden">
                 <div
-                  className="h-full bg-gradient-to-r from-blue-600 via-indigo-500 to-blue-400 transition-all duration-300"
+                  className="h-full bg-[#E31B23] transition-all duration-300"
                   style={{ width: step === 1 ? '33%' : step === 2 ? '66%' : '100%' }}
                 />
               </div>
 
               {/* Error & Success Messages */}
               {error && (
-                <div className="mb-5 p-3 rounded-2xl bg-rose-500/15 border border-rose-500/40 text-rose-300 text-xs font-bold flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                <div className="mb-3 p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-500/40 text-rose-700 dark:text-rose-300 text-xs font-bold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-500 dark:text-rose-400" />
                   <span>{error}</span>
                 </div>
               )}
 
               {successMsg && (
-                <div className="mb-5 p-3 rounded-2xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                <div className="mb-3 p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-500/40 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-500 dark:text-emerald-400" />
                   <span>{successMsg}</span>
                 </div>
               )}
 
               {/* Step 1: Personal Info */}
               {step === 1 && (
-                <div className="space-y-4 animate-fadeIn">
+                <div className="space-y-2.5 animate-fadeIn">
                   <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-300 block">
+                    <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block">
                       الاسم الرباعي للطالب بالكامل (باللغة العربية) *
                     </label>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                       <input
                         type="text"
                         value={firstName}
                         onChange={(e) => setFirstName(e.target.value)}
                         placeholder="الاسم الأول"
-                        className="p-3 bg-[#0d1b3e] border border-blue-500/30 rounded-xl text-white text-xs placeholder:text-slate-500 text-right focus:outline-none focus:border-blue-400"
+                        className="p-2 bg-[#F3F4F6]/70 dark:bg-[#0D0D0F] text-[#151515] dark:text-neutral-100 border border-neutral-200 dark:border-neutral-700 rounded-xl text-xs placeholder:text-neutral-400 text-right focus:outline-none focus:border-[#1769D2]"
                       />
                       <input
                         type="text"
                         value={secondName}
                         onChange={(e) => setSecondName(e.target.value)}
                         placeholder="اسم الأب"
-                        className="p-3 bg-[#0d1b3e] border border-blue-500/30 rounded-xl text-white text-xs placeholder:text-slate-500 text-right focus:outline-none focus:border-blue-400"
+                        className="p-2 bg-[#F3F4F6]/70 dark:bg-[#0D0D0F] text-[#151515] dark:text-neutral-100 border border-neutral-200 dark:border-neutral-700 rounded-xl text-xs placeholder:text-neutral-400 text-right focus:outline-none focus:border-[#1769D2]"
                       />
                       <input
                         type="text"
                         value={thirdName}
                         onChange={(e) => setThirdName(e.target.value)}
                         placeholder="اسم الجد"
-                        className="p-3 bg-[#0d1b3e] border border-blue-500/30 rounded-xl text-white text-xs placeholder:text-slate-500 text-right focus:outline-none focus:border-blue-400"
+                        className="p-2 bg-[#F3F4F6]/70 dark:bg-[#0D0D0F] text-[#151515] dark:text-neutral-100 border border-neutral-200 dark:border-neutral-700 rounded-xl text-xs placeholder:text-neutral-400 text-right focus:outline-none focus:border-[#1769D2]"
                       />
                       <input
                         type="text"
                         value={lastName}
                         onChange={(e) => setLastName(e.target.value)}
                         placeholder="اللقب / العائلة"
-                        className="p-3 bg-[#0d1b3e] border border-blue-500/30 rounded-xl text-white text-xs placeholder:text-slate-500 text-right focus:outline-none focus:border-blue-400"
+                        className="p-2 bg-[#F3F4F6]/70 dark:bg-[#0D0D0F] text-[#151515] dark:text-neutral-100 border border-neutral-200 dark:border-neutral-700 rounded-xl text-xs placeholder:text-neutral-400 text-right focus:outline-none focus:border-[#1769D2]"
                       />
                     </div>
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-300 block">
+                    <label className="text-[11px] font-bold text-neutral-700 dark:text-neutral-300 block">
                       رقم هاتف الطالب (واتساب للتنبيهات والدرجات) *
                     </label>
                     <div className="relative">
-                      <Phone className="w-4 h-4 absolute top-3.5 right-3.5 text-blue-400 pointer-events-none" />
+                      <Phone className="w-4 h-4 top-2.5 right-3 absolute text-[#1769D2] pointer-events-none" />
                       <input
                         type="tel"
                         value={phone}
                         onChange={(e) => setPhone(e.target.value)}
                         placeholder="01xxxxxxxxx"
-                        className="w-full pr-10 pl-4 py-3 bg-[#0d1b3e] border border-blue-500/30 rounded-xl text-white text-sm text-right focus:outline-none focus:border-blue-400"
+                        className="w-full pr-9 pl-3 py-2 bg-[#F3F4F6]/70 dark:bg-[#0D0D0F] text-[#151515] dark:text-neutral-100 border border-neutral-200 dark:border-neutral-700 rounded-xl text-xs sm:text-sm text-right focus:outline-none focus:border-[#1769D2]"
                       />
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className={`space-y-1 ${(schoolYear.includes('الابتدائي') || schoolYear.includes('الإعدادي')) ? 'sm:col-span-2' : ''}`}>
-                      <label className="text-xs font-bold text-slate-300 block">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-neutral-700 dark:text-neutral-300 block">
                         السنة الدراسية
                       </label>
                       <select
                         value={schoolYear}
                         onChange={(e) => {
-                          const newGrade = e.target.value;
-                          setSchoolYear(newGrade);
-                          if (newGrade.includes('الابتدائي') || newGrade.includes('الإعدادي')) {
-                            setDivision('');
-                          } else if (newGrade === 'الصف الثالث الثانوي') {
-                            setDivision('علمي علوم');
-                          } else {
-                            setDivision('بكالوريا');
-                          }
+                          setSchoolYear(e.target.value);
+                          setDivision('عام');
                         }}
-                        className="w-full p-3 bg-[#0d1b3e] border border-blue-500/30 rounded-xl text-white text-xs text-right focus:outline-none focus:border-blue-400"
+                        className="w-full p-2 bg-[#F3F4F6]/70 dark:bg-[#0D0D0F] text-[#151515] dark:text-neutral-100 border border-neutral-200 dark:border-neutral-700 rounded-xl text-xs text-right focus:outline-none focus:border-[#1769D2]"
                       >
-                        <optgroup label="المرحلة الابتدائية (بدون شعبة)">
-                          <option value="الصف الأول الابتدائي">الصف الأول الابتدائي</option>
-                          <option value="الصف الثاني الابتدائي">الصف الثاني الابتدائي</option>
-                          <option value="الصف الثالث الابتدائي">الصف الثالث الابتدائي</option>
-                          <option value="الصف الرابع الابتدائي">الصف الرابع الابتدائي</option>
-                          <option value="الصف الخامس الابتدائي">الصف الخامس الابتدائي</option>
-                          <option value="الصف السادس الابتدائي">الصف السادس الابتدائي</option>
-                        </optgroup>
-                        <optgroup label="المرحلة الإعدادية (بدون شعبة)">
-                          <option value="الصف الأول الإعدادي">الصف الأول الإعدادي</option>
-                          <option value="الصف الثاني الإعدادي">الصف الثاني الإعدادي</option>
-                          <option value="الصف الثالث الإعدادي">الصف الثالث الإعدادي</option>
-                        </optgroup>
-                        <optgroup label="المرحلة الثانوية">
-                          <option value="الصف الأول الثانوي">الصف الأول الثانوي</option>
-                          <option value="الصف الثاني الثانوي">الصف الثاني الثانوي</option>
-                          <option value="الصف الثالث الثانوي">الصف الثالث الثانوي (دفعة 2027)</option>
-                        </optgroup>
+                        <option value="الصف الأول الثانوي">الصف الأول الثانوي</option>
                       </select>
                     </div>
 
-                    {!(schoolYear.includes('الابتدائي') || schoolYear.includes('الإعدادي')) && (
-                      <div className="space-y-1 animate-fadeIn">
-                        <label className="text-xs font-bold text-slate-300 block">
-                          {schoolYear === 'الصف الثالث الثانوي' ? 'الشعبة الدراسية (تالتة ثانوي)' : 'الشعبة (المرحلة الثانوية)'}
-                        </label>
-                        {schoolYear === 'الصف الثالث الثانوي' ? (
-                          <select
-                            value={division}
-                            onChange={(e) => setDivision(e.target.value)}
-                            className="w-full p-3 bg-[#0d1b3e] border border-blue-500/30 rounded-xl text-white text-xs text-right focus:outline-none focus:border-blue-400"
-                          >
-                            <optgroup label="شعب الصف الثالث الثانوي">
-                              <option value="علمي علوم">علمي علوم</option>
-                              <option value="علمي رياضة">علمي رياضة</option>
-                              <option value="شعبة أدبي">شعبة أدبي</option>
-                            </optgroup>
-                            <optgroup label="نظام المرحلة الثانوية">
-                              <option value="بكالوريا">بكالوريا</option>
-                              <option value="عام">عام</option>
-                              <option value="أزهر">أزهر</option>
-                            </optgroup>
-                          </select>
-                        ) : (
-                          <select
-                            value={division}
-                            onChange={(e) => setDivision(e.target.value)}
-                            className="w-full p-3 bg-[#0d1b3e] border border-blue-500/30 rounded-xl text-white text-xs text-right focus:outline-none focus:border-blue-400"
-                          >
-                            <option value="بكالوريا">بكالوريا</option>
-                            <option value="عام">عام</option>
-                            <option value="أزهر">أزهر</option>
-                          </select>
-                        )}
-                      </div>
-                    )}
+                    <div className="space-y-1 animate-fadeIn">
+                      <label className="text-[11px] font-bold text-neutral-700 dark:text-neutral-300 block">
+                        الشعبة (الصف الأول الثانوي)
+                      </label>
+                      <select
+                        value={division}
+                        onChange={(e) => setDivision(e.target.value)}
+                        className="w-full p-2 bg-[#F3F4F6]/70 dark:bg-[#0D0D0F] text-[#151515] dark:text-neutral-100 border border-neutral-200 dark:border-neutral-700 rounded-xl text-xs text-right focus:outline-none focus:border-[#1769D2]"
+                      >
+                        <option value="بكالوريا">بكالوريا</option>
+                        <option value="عام">عام</option>
+                        <option value="أزهر">أزهر</option>
+                      </select>
+                    </div>
                   </div>
 
-                  <div className="pt-2">
+                  <div className="pt-1">
                     <button
                       type="button"
                       onClick={handleNextStep1}
-                      className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black text-sm flex items-center justify-center gap-2 cursor-pointer transition-all shadow-lg shadow-blue-600/20"
+                      className="w-full py-2.5 rounded-xl bg-[#E31B23] hover:bg-[#B5121B] text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-sm"
                     >
                       <span>متابعة لبيانات ولي الأمر والمدرسة ➔</span>
                     </button>
@@ -445,10 +451,10 @@ export const SignupPage: React.FC<SignupPageProps> = ({ onNavigate, onAuthSucces
 
               {/* Step 2: Parent & School Info */}
               {step === 2 && (
-                <div className="space-y-4 animate-fadeIn">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-2.5 animate-fadeIn">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <div className="space-y-1">
-                      <label className="text-xs font-bold text-slate-300 block">
+                      <label className="text-[11px] font-bold text-neutral-700 dark:text-neutral-300 block">
                         رقم هاتف الأب (واتساب) *
                       </label>
                       <input
@@ -456,11 +462,11 @@ export const SignupPage: React.FC<SignupPageProps> = ({ onNavigate, onAuthSucces
                         value={fatherPhone}
                         onChange={(e) => setFatherPhone(e.target.value)}
                         placeholder="01xxxxxxxxx"
-                        className="w-full p-3 bg-[#0d1b3e] border border-blue-500/30 rounded-xl text-white text-sm text-right focus:outline-none focus:border-blue-400"
+                        className="w-full p-2 bg-[#F3F4F6]/70 dark:bg-[#0D0D0F] text-[#151515] dark:text-neutral-100 border border-neutral-200 dark:border-neutral-700 rounded-xl text-xs sm:text-sm text-right focus:outline-none focus:border-[#1769D2]"
                       />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-xs font-bold text-slate-300 block">
+                      <label className="text-[11px] font-bold text-neutral-700 dark:text-neutral-300 block">
                         رقم هاتف الأم (إضافي)
                       </label>
                       <input
@@ -468,20 +474,20 @@ export const SignupPage: React.FC<SignupPageProps> = ({ onNavigate, onAuthSucces
                         value={motherPhone}
                         onChange={(e) => setMotherPhone(e.target.value)}
                         placeholder="01xxxxxxxxx"
-                        className="w-full p-3 bg-[#0d1b3e] border border-blue-500/30 rounded-xl text-white text-sm text-right focus:outline-none focus:border-blue-400"
+                        className="w-full p-2 bg-[#F3F4F6]/70 dark:bg-[#0D0D0F] text-[#151515] dark:text-neutral-100 border border-neutral-200 dark:border-neutral-700 rounded-xl text-xs sm:text-sm text-right focus:outline-none focus:border-[#1769D2]"
                       />
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <div className="space-y-1">
-                      <label className="text-xs font-bold text-slate-300 block">
+                      <label className="text-[11px] font-bold text-neutral-700 dark:text-neutral-300 block">
                         المحافظة
                       </label>
                       <select
                         value={governorate}
                         onChange={(e) => setGovernorate(e.target.value)}
-                        className="w-full p-3 bg-[#0d1b3e] border border-blue-500/30 rounded-xl text-white text-xs text-right focus:outline-none focus:border-blue-400"
+                        className="w-full p-2 bg-[#F3F4F6]/70 dark:bg-[#0D0D0F] text-[#151515] dark:text-neutral-100 border border-neutral-200 dark:border-neutral-700 rounded-xl text-xs text-right focus:outline-none focus:border-[#1769D2]"
                       >
                         <option value="السويس">السويس</option>
                         <option value="القاهرة">القاهرة</option>
@@ -508,47 +514,46 @@ export const SignupPage: React.FC<SignupPageProps> = ({ onNavigate, onAuthSucces
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-xs font-bold text-slate-300 block">
+                      <label className="text-[11px] font-bold text-neutral-700 dark:text-neutral-300 block">
                         نظام التعليم
                       </label>
                       <select
                         value={educationSystem}
                         onChange={(e) => setEducationSystem(e.target.value)}
-                        className="w-full p-3 bg-[#0d1b3e] border border-blue-500/30 rounded-xl text-white text-xs text-right focus:outline-none focus:border-blue-400"
+                        className="w-full p-2 bg-[#F3F4F6]/70 dark:bg-[#0D0D0F] text-[#151515] dark:text-neutral-100 border border-neutral-200 dark:border-neutral-700 rounded-xl text-xs text-right focus:outline-none focus:border-[#1769D2]"
                       >
                         <option value="عربي">عام / عربي</option>
-                        <option value="لغات تجريبي">لغات تجريبي</option>
-                        <option value="لغات خاص">لغات خاص</option>
+                        <option value="لغات">لغات</option>
                         <option value="أزهر">أزهر شريف</option>
                       </select>
                     </div>
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-300 block">
+                    <label className="text-[11px] font-bold text-neutral-700 dark:text-neutral-300 block">
                       اسم المدرسة المقيد بها الطالب
                     </label>
                     <input
                       type="text"
                       value={schoolName}
                       onChange={(e) => setSchoolName(e.target.value)}
-                      placeholder="مثال: مدرسة السويس الثانوية العسكرية بنين"
-                      className="w-full p-3 bg-[#0d1b3e] border border-blue-500/30 rounded-xl text-white text-xs text-right focus:outline-none focus:border-blue-400"
+                      placeholder="مثال: مدرسة السويس الثانوية"
+                      className="w-full p-2 bg-[#F3F4F6]/70 dark:bg-[#0D0D0F] text-[#151515] dark:text-neutral-100 border border-neutral-200 dark:border-neutral-700 rounded-xl text-xs text-right focus:outline-none focus:border-[#1769D2]"
                     />
                   </div>
 
-                  <div className="flex items-center gap-3 pt-2">
+                  <div className="flex items-center gap-2 pt-1">
                     <button
                       type="button"
                       onClick={() => setStep(1)}
-                      className="py-3 px-5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold cursor-pointer"
+                      className="py-2.5 px-4 rounded-xl bg-[#F3F4F6] dark:bg-[#0D0D0F] hover:bg-neutral-200 dark:hover:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 text-xs font-bold cursor-pointer"
                     >
                       ← الرجوع
                     </button>
                     <button
                       type="button"
                       onClick={handleNextStep2}
-                      className="flex-1 py-3.5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black text-sm flex items-center justify-center gap-2 cursor-pointer transition-all shadow-lg"
+                      className="flex-1 py-2.5 rounded-xl bg-[#E31B23] hover:bg-[#B5121B] text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-sm"
                     >
                       <span>متابعة لكلمة المرور والأمان ➔</span>
                     </button>
@@ -558,20 +563,20 @@ export const SignupPage: React.FC<SignupPageProps> = ({ onNavigate, onAuthSucces
 
               {/* Step 3: Credentials & Final Info */}
               {step === 3 && (
-                <form onSubmit={handleSubmit} className="space-y-4 animate-fadeIn">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <form onSubmit={handleSubmit} className="space-y-2.5 animate-fadeIn">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <div className="space-y-1">
-                      <label className="text-xs font-bold text-slate-300 block">
+                      <label className="text-[11px] font-bold text-neutral-700 dark:text-neutral-300 block">
                         النوع (الجنس)
                       </label>
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="grid grid-cols-2 gap-1.5">
                         <button
                           type="button"
                           onClick={() => setGender('ذكر')}
-                          className={`p-2.5 rounded-xl border text-xs font-black transition-all cursor-pointer ${
+                          className={`p-2 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
                             gender === 'ذكر'
-                              ? 'bg-blue-600 border-blue-400 text-white shadow-md'
-                              : 'bg-[#0d1b3e] border-blue-500/30 text-slate-400'
+                              ? 'bg-[#1769D2] border-[#1769D2] text-white shadow-sm'
+                              : 'bg-[#F3F4F6]/70 dark:bg-[#0D0D0F] text-neutral-600 dark:text-neutral-300 border-neutral-200 dark:border-neutral-700'
                           }`}
                         >
                           طالب (بنين)
@@ -579,10 +584,10 @@ export const SignupPage: React.FC<SignupPageProps> = ({ onNavigate, onAuthSucces
                         <button
                           type="button"
                           onClick={() => setGender('أنثى')}
-                          className={`p-2.5 rounded-xl border text-xs font-black transition-all cursor-pointer ${
+                          className={`p-2 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
                             gender === 'أنثى'
-                              ? 'bg-rose-600 border-rose-400 text-white shadow-md'
-                              : 'bg-[#0d1b3e] border-blue-500/30 text-slate-400'
+                              ? 'bg-[#E31B23] border-[#E31B23] text-white shadow-sm'
+                              : 'bg-[#F3F4F6]/70 dark:bg-[#0D0D0F] text-neutral-600 dark:text-neutral-300 border-neutral-200 dark:border-neutral-700'
                           }`}
                         >
                           طالبة (بنات)
@@ -591,7 +596,7 @@ export const SignupPage: React.FC<SignupPageProps> = ({ onNavigate, onAuthSucces
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-xs font-bold text-slate-300 block">
+                      <label className="text-[11px] font-bold text-neutral-700 dark:text-neutral-300 block">
                         البريد الإلكتروني (اختياري)
                       </label>
                       <input
@@ -599,14 +604,14 @@ export const SignupPage: React.FC<SignupPageProps> = ({ onNavigate, onAuthSucces
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         placeholder="yourname@gmail.com"
-                        className="w-full p-3 bg-[#0d1b3e] border border-blue-500/30 rounded-xl text-white text-xs text-right focus:outline-none focus:border-blue-400"
+                        className="w-full p-2 bg-[#F3F4F6]/70 dark:bg-[#0D0D0F] text-[#151515] dark:text-neutral-100 border border-neutral-200 dark:border-neutral-700 rounded-xl text-xs text-right focus:outline-none focus:border-[#1769D2]"
                       />
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <div className="space-y-1">
-                      <label className="text-xs font-bold text-slate-300 block">
+                      <label className="text-[11px] font-bold text-neutral-700 dark:text-neutral-300 block">
                         كلمة المرور *
                       </label>
                       <div className="relative">
@@ -616,12 +621,12 @@ export const SignupPage: React.FC<SignupPageProps> = ({ onNavigate, onAuthSucces
                           onChange={(e) => setPassword(e.target.value)}
                           placeholder="••••••••"
                           required
-                          className="w-full p-3 bg-[#0d1b3e] border border-blue-500/30 rounded-xl text-white text-sm text-right focus:outline-none focus:border-blue-400"
+                          className="w-full p-2 bg-[#F3F4F6]/70 dark:bg-[#0D0D0F] text-[#151515] dark:text-neutral-100 border border-neutral-200 dark:border-neutral-700 rounded-xl text-xs sm:text-sm text-right focus:outline-none focus:border-[#1769D2]"
                         />
                         <button
                           type="button"
                           onClick={() => setShowPassword(!showPassword)}
-                          className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400"
+                          className="absolute inset-y-0 left-0 pl-2.5 flex items-center text-neutral-500 dark:text-neutral-400"
                         >
                           {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                         </button>
@@ -629,7 +634,7 @@ export const SignupPage: React.FC<SignupPageProps> = ({ onNavigate, onAuthSucces
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-xs font-bold text-slate-300 block">
+                      <label className="text-[11px] font-bold text-neutral-700 dark:text-neutral-300 block">
                         تأكيد كلمة المرور *
                       </label>
                       <input
@@ -638,29 +643,29 @@ export const SignupPage: React.FC<SignupPageProps> = ({ onNavigate, onAuthSucces
                         onChange={(e) => setConfirmPassword(e.target.value)}
                         placeholder="••••••••"
                         required
-                        className="w-full p-3 bg-[#0d1b3e] border border-blue-500/30 rounded-xl text-white text-sm text-right focus:outline-none focus:border-blue-400"
+                        className="w-full p-2 bg-[#F3F4F6]/70 dark:bg-[#0D0D0F] text-[#151515] dark:text-neutral-100 border border-neutral-200 dark:border-neutral-700 rounded-xl text-xs sm:text-sm text-right focus:outline-none focus:border-[#1769D2]"
                       />
                     </div>
                   </div>
 
                   {/* Terms Checkbox */}
-                  <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer pt-1">
+                  <label className="flex items-center gap-2 text-[11px] text-neutral-700 dark:text-neutral-300 cursor-pointer pt-0.5">
                     <input
                       type="checkbox"
                       checked={termsAgreed}
                       onChange={(e) => setTermsAgreed(e.target.checked)}
-                      className="w-4 h-4 rounded border-blue-500/50 bg-[#0d1b3e] accent-blue-600"
+                      className="w-3.5 h-3.5 rounded border-neutral-300 dark:border-neutral-600 accent-[#E31B23]"
                     />
                     <span>
-                      أوافق على <b>شروط الاستخدام</b> وسياسة حماية المحتوى والامتحانات بمنصة قلب العلم.
+                      أوافق على <b>شروط الاستخدام</b> وسياسة حماية المحتوى والامتحانات بمنصة المتفلسفة.
                     </span>
                   </label>
 
-                  <div className="flex items-center gap-3 pt-2">
+                  <div className="flex items-center gap-2 pt-1">
                     <button
                       type="button"
                       onClick={() => setStep(2)}
-                      className="py-3.5 px-5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold cursor-pointer"
+                      className="py-2.5 px-4 rounded-xl bg-[#F3F4F6] dark:bg-[#0D0D0F] hover:bg-neutral-200 dark:hover:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 text-xs font-bold cursor-pointer"
                     >
                       ← الرجوع
                     </button>
@@ -668,20 +673,20 @@ export const SignupPage: React.FC<SignupPageProps> = ({ onNavigate, onAuthSucces
                     <button
                       type="submit"
                       disabled={loading}
-                      className="flex-1 py-3.5 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-500 text-white font-black text-sm sm:text-base flex items-center justify-center gap-2 cursor-pointer transition-all shadow-xl shadow-blue-600/30 disabled:opacity-50"
+                      className="flex-1 py-2.5 rounded-xl bg-[#E31B23] hover:bg-[#B5121B] text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-sm disabled:opacity-50"
                     >
-                      <span>{loading ? 'جارٍ إنشاء الحساب...' : 'إنشاء الحساب والبدء الآن 🚀'}</span>
+                      <span>{loading ? 'جارٍ إنشاء الحساب...' : 'إنشاء الحساب والبدء الآن'}</span>
                     </button>
                   </div>
                 </form>
               )}
 
               {/* Already have account footer link */}
-              <div className="text-center pt-4 mt-4 border-t border-white/5">
+              <div className="text-center pt-3 mt-3 border-t border-neutral-200 dark:border-neutral-800">
                 <button
                   type="button"
                   onClick={() => onNavigate('login')}
-                  className="text-xs text-blue-300 hover:text-white transition-colors font-bold cursor-pointer"
+                  className="text-xs text-[#1769D2] hover:underline transition-colors font-bold cursor-pointer"
                 >
                   لديك حساب مسجل بالفعل؟ <b>تسجيل الدخول هنا ➔</b>
                 </button>
@@ -692,8 +697,8 @@ export const SignupPage: React.FC<SignupPageProps> = ({ onNavigate, onAuthSucces
       </main>
 
       {/* Footer */}
-      <footer className="relative z-10 py-4 text-center text-xs text-slate-500 border-t border-white/5">
-        <p>جميع الحقوق محفوظة © لمنصة قلب العلم التعليمية 2027</p>
+      <footer className="relative z-10 py-4 text-center text-xs text-neutral-500 border-t border-neutral-200 dark:border-neutral-800 bg-white/60 dark:bg-[#121216]/80">
+        <p>© {new Date().getFullYear()} منصة المتفلسفة التعليمية. جميع الحقوق محفوظة.</p>
       </footer>
     </div>
   );

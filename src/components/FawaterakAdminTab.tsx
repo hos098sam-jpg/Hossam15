@@ -21,6 +21,7 @@ import {
   Users
 } from 'lucide-react';
 import { Coupon, FawaterakInvoice, Course, User } from '../types';
+import { getClientAuthHeaders } from '../utils/authToken';
 
 interface FawaterakAdminTabProps {
   courses: Course[];
@@ -48,7 +49,7 @@ export const FawaterakAdminTab: React.FC<FawaterakAdminTabProps> = ({ courses, s
   const [searchInvoice, setSearchInvoice] = useState('');
 
   // Official Production Platform Domain & Activation URLs
-  const primaryPlatformUrl = 'https://qalbalelm.web.app';
+  const primaryPlatformUrl = 'https://motafalsifa.vercel.app';
   const webhookUrl = `${primaryPlatformUrl}/api/fawaterak/webhook`;
   const successUrl = `${primaryPlatformUrl}/api/fawaterak/callback?status=paid`;
   const pendingUrl = `${primaryPlatformUrl}/api/fawaterak/callback?status=pending`;
@@ -78,9 +79,10 @@ export const FawaterakAdminTab: React.FC<FawaterakAdminTabProps> = ({ courses, s
     }
     setIsUpdatingKeys(true);
     try {
+      const headers = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
       const res = await fetch('/api/fawaterak/update-keys', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           hashKey: fawaterakApiKeyInput.trim(),
           providerKey: fawaterakProviderKeyInput.trim() || 'FAWATERAK.30884',
@@ -103,7 +105,8 @@ export const FawaterakAdminTab: React.FC<FawaterakAdminTabProps> = ({ courses, s
   const handleTestConnection = async () => {
     setTestStatus({ loading: true });
     try {
-      const res = await fetch('/api/fawaterak/activation-info');
+      const headers = await getClientAuthHeaders();
+      const res = await fetch('/api/fawaterak/activation-info', { headers });
       const data = await res.json();
       if (res.ok) {
         setTestStatus({
@@ -122,9 +125,10 @@ export const FawaterakAdminTab: React.FC<FawaterakAdminTabProps> = ({ courses, s
   const fetchData = async () => {
     setLoading(true);
     try {
+      const headers = await getClientAuthHeaders();
       const [couponsRes, invoicesRes] = await Promise.all([
-        fetch('/api/coupons'),
-        fetch('/api/fawaterak/invoices'),
+        fetch('/api/coupons', { headers }),
+        fetch('/api/fawaterak/invoices', { headers }),
       ]);
 
       if (couponsRes.ok) {
@@ -155,9 +159,10 @@ export const FawaterakAdminTab: React.FC<FawaterakAdminTabProps> = ({ courses, s
     }
     setCouponSubmitting(true);
     try {
+      const headers = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
       const res = await fetch('/api/coupons', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           code: newCode.trim().toUpperCase(),
           discountType: newDiscountType,
@@ -186,8 +191,10 @@ export const FawaterakAdminTab: React.FC<FawaterakAdminTabProps> = ({ courses, s
 
   const handleToggleCoupon = async (code: string) => {
     try {
+      const headers = await getClientAuthHeaders();
       const res = await fetch(`/api/coupons/${encodeURIComponent(code)}/toggle`, {
         method: 'PATCH',
+        headers,
       });
       if (res.ok) {
         fetchData();
@@ -198,8 +205,10 @@ export const FawaterakAdminTab: React.FC<FawaterakAdminTabProps> = ({ courses, s
   const handleDeleteCoupon = async (code: string) => {
     if (!confirm(`هل أنت متأكد من حذف كود الخصم (${code})؟`)) return;
     try {
+      const headers = await getClientAuthHeaders();
       const res = await fetch(`/api/coupons/${encodeURIComponent(code)}`, {
         method: 'DELETE',
+        headers,
       });
       if (res.ok) {
         fetchData();

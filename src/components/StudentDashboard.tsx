@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { Course, User, CourseExam, AppView } from '../types';
 import { redeemStudentWalletCode } from '../data/initialData';
+import { getClientAuthHeaders } from '../utils/authToken';
 
 interface StudentDashboardProps {
   currentUser: User;
@@ -66,7 +67,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     const phoneTail = String(currentUser.phone || '99')
       .replace(/\D/g, '')
       .slice(-2);
-    return `QALB-${cleanId || 'ST'}${phoneTail || '25'}`;
+    return `MTAF-${cleanId || 'ST'}${phoneTail || '25'}`;
   }, [currentUser.referralCode, currentUser.id, currentUser.phone]);
 
   const [friendReferralInput, setFriendReferralInput] = useState('');
@@ -80,9 +81,10 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     setIsRedeemingReferral(true);
     setReferralFeedback(null);
     try {
+      const headers = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
       const res = await fetch('/api/referral/redeem', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           studentId: currentUser.id,
           referralCode: friendReferralInput.trim().toUpperCase(),
@@ -216,7 +218,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
   // Student Full Display Name
   const studentDisplayName =
-    (currentUser.name && currentUser.name !== 'مستخدم منصة قلب العلم' ? currentUser.name : '') ||
+    (currentUser.name && currentUser.name !== 'مستخدم منصة المتفلسفة ' ? currentUser.name : '') ||
     `${currentUser.firstName || ''} ${currentUser.secondName || ''} ${currentUser.thirdName || ''} ${currentUser.lastName || ''}`.trim() ||
     'طالب المنصة المتميز';
 
@@ -605,7 +607,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   </button>
                   <a
                     href={`https://wa.me/?text=${encodeURIComponent(
-                      `🎁 اشترك معي في منصة قلب العلم التعليمية واستخدم كود الدعوة الخاص بي (${myReferralCode}) لتحصل على 15 ج.م رصيد هدية فورية في محفظتك!`
+                      `🎁 اشترك معي في منصة المتفلسفة  التعليمية واستخدم كود الدعوة الخاص بي (${myReferralCode}) لتحصل على 15 ج.م رصيد هدية فورية في محفظتك!`
                     )}`}
                     target="_blank"
                     rel="noreferrer"
@@ -637,7 +639,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     dir="ltr"
                     value={friendReferralInput}
                     onChange={(e) => setFriendReferralInput(e.target.value.toUpperCase())}
-                    placeholder="QALB-XXXX"
+                    placeholder="MTAF-XXXX"
                     className="px-3.5 py-2.5 rounded-xl bg-slate-950 border border-indigo-500/50 text-white text-xs font-black font-mono tracking-wider w-40 focus:outline-none focus:border-amber-400"
                   />
                   <button
@@ -969,7 +971,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
                   <div className="space-y-1">
                     <h2 className="text-xs uppercase tracking-widest font-black text-slate-400">
-                      جمهورية مصر العربية • منصة قلب العلم التعليمية
+                      جمهورية مصر العربية • منصة المتفلسفة  التعليمية
                     </h2>
                     <h1 className="text-2xl sm:text-3xl font-black text-indigo-950">
                       شهادة تفوق وإتمام دورة تعليمية
@@ -977,7 +979,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   </div>
 
                   <p className="text-sm text-slate-600 max-w-lg mx-auto leading-relaxed">
-                    تشهد إدارة منصة قلب العلم التعليمية بأن الطالب/ـة:
+                    تشهد إدارة منصة المتفلسفة  التعليمية بأن الطالب/ـة:
                   </p>
 
                   <div className="py-2 border-b-2 border-indigo-200 max-w-md mx-auto">

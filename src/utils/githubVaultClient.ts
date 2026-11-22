@@ -1,12 +1,12 @@
 /**
  * Client-Side GitHub Vault Video Uploader
  * Enables 100% serverless, zero-cost video uploads directly to GitHub Vault from the browser.
- * Works seamlessly on static Firebase Hosting (https://qalbalelm.web.app) with no backend required.
+ * Works seamlessly on static Firebase Hosting (https://motafalsifa.vercel.app) with no backend required.
  */
 
 export const GITHUB_VAULT_CONFIG = {
-  owner: 'hos098sam-jpg',
-  repo: 'x3bb48b-c76c300b',
+  owner: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GITHUB_VAULT_OWNER) || 'hos098sam-jpg',
+  repo: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GITHUB_VAULT_REPO) || 'al_motafalsifa_vault',
   token: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GITHUB_TOKEN) || '',
   branch: 'main',
 };

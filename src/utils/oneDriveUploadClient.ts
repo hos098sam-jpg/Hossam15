@@ -35,9 +35,9 @@ export interface OneDriveAccountInfo {
   remainingGB: string;
 }
 
-const STORAGE_TOKEN_KEY = 'qalb_onedrive_access_token';
-const STORAGE_CLIENT_ID_KEY = 'qalb_onedrive_client_id';
-const STORAGE_FOLDER_KEY = 'qalb_onedrive_folder';
+const STORAGE_TOKEN_KEY = 'al_motafalsifa_onedrive_access_token';
+const STORAGE_CLIENT_ID_KEY = 'al_motafalsifa_onedrive_client_id';
+const STORAGE_FOLDER_KEY = 'al_motafalsifa_onedrive_folder';
 
 export function getSavedOneDriveToken(): string {
   try {
@@ -86,15 +86,15 @@ export function saveOneDriveClientId(clientId: string): void {
 
 export function getSavedOneDriveFolder(): string {
   try {
-    return localStorage.getItem(STORAGE_FOLDER_KEY) || 'QalbElElm_Videos';
+    return localStorage.getItem(STORAGE_FOLDER_KEY) || 'AlMotafalsifa_Videos';
   } catch {
-    return 'QalbElElm_Videos';
+    return 'AlMotafalsifa_Videos';
   }
 }
 
 export function saveOneDriveFolder(folder: string): void {
   try {
-    const cleaned = folder.trim().replace(/^\/+|\/+$/g, '') || 'QalbElElm_Videos';
+    const cleaned = folder.trim().replace(/^\/+|\/+$/g, '') || 'AlMotafalsifa_Videos';
     localStorage.setItem(STORAGE_FOLDER_KEY, cleaned);
   } catch {}
 }
@@ -193,7 +193,7 @@ export async function uploadFileToOneDriveGraph(
   }
 
 
-  const folder = (customFolder || getSavedOneDriveFolder() || 'QalbElElm_Videos').replace(/^\/+|\/+$/g, '');
+  const folder = (customFolder || getSavedOneDriveFolder() || 'AlMotafalsifa_Videos').replace(/^\/+|\/+$/g, '');
   const timestamp = new Date().toISOString().slice(0, 10);
   const safeFileName = `${timestamp}_${file.name.replace(/[#%&*{}\\:<>?/+|"]/g, '_')}`;
   const encodedPath = `${encodeURIComponent(folder)}/${encodeURIComponent(safeFileName)}`;

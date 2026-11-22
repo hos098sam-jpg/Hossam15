@@ -54,7 +54,7 @@ export const AreaChart = BaseChart;
 export const LineChart = BaseChart;
 export const ComposedChart = BaseChart;
 
-export const PieChart: React.FC<{ children?: React.ReactNode }> = ({ children }) => (
+export const PieChart: React.FC<{ children?: React.ReactNode; [key: string]: any }> = ({ children }) => (
   <div className="w-full h-full flex items-center justify-center p-2">{children}</div>
 );
 

@@ -5,6 +5,7 @@ import {
   INITIAL_NOTIFICATIONS,
   addDeletedNotificationId,
 } from '../data/initialData';
+import { getClientAuthHeaders } from './authToken';
 
 export { getSavedNotifications, saveNotifications, INITIAL_NOTIFICATIONS };
 
@@ -107,7 +108,11 @@ export function deleteNotification(id: string): void {
   const current = getSavedNotifications();
   const updated = current.filter((n) => n.id !== id);
   saveNotifications(updated);
-  fetch(`/api/notifications/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
+  getClientAuthHeaders()
+    .then((headers) =>
+      fetch(`/api/notifications/${encodeURIComponent(id)}`, { method: 'DELETE', headers })
+    )
+    .catch(() => {});
 }
 
 /**
@@ -119,7 +124,9 @@ export function clearAllNotifications(): void {
     if (n?.id) addDeletedNotificationId(n.id);
   });
   saveNotifications([]);
-  fetch('/api/notifications', { method: 'DELETE' }).catch(() => {});
+  getClientAuthHeaders()
+    .then((headers) => fetch('/api/notifications', { method: 'DELETE', headers }))
+    .catch(() => {});
 }
 
 /**

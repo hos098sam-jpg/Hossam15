@@ -33,15 +33,19 @@ export const TeacherStudentsPage: React.FC<TeacherStudentsPageProps> = ({
   allStudents,
   onNavigate,
 }) => {
-  // Only courses owned by this teacher
+  // All courses on the private platform belong to أ/ سوزان كريم فهمي
   const myCourses = useMemo(
     () =>
-      allCourses.filter(
-        (c) =>
-          c.instructorId === currentTeacher.id ||
-          c.instructor === currentTeacher.name ||
-          c.teacherName === currentTeacher.name
-      ),
+      currentTeacher.email?.toLowerCase() === 'almtflsft@gmail.com' ||
+      currentTeacher.role === 'admin' ||
+      !currentTeacher.isAssistant
+        ? allCourses
+        : allCourses.filter(
+            (c) =>
+              c.instructorId === currentTeacher.id ||
+              c.instructor === currentTeacher.name ||
+              c.teacherName === currentTeacher.name
+          ),
     [allCourses, currentTeacher]
   );
 
@@ -277,7 +281,7 @@ export const TeacherStudentsPage: React.FC<TeacherStudentsPageProps> = ({
                       </div>
                       <div>
                         <h4 className="text-sm font-black text-slate-900 dark:text-white line-clamp-1">
-                          {student.name || 'طالب منصة قلب العلم'}
+                          {student.name || 'طالب منصة المتفلسفة '}
                         </h4>
                         <div className="flex items-center gap-1.5 mt-0.5">
                           <span
@@ -290,7 +294,7 @@ export const TeacherStudentsPage: React.FC<TeacherStudentsPageProps> = ({
                             {isFemale ? 'طالبة (بنات)' : 'طالب (بنين)'}
                           </span>
                           <span className="text-[10px] text-slate-400 font-bold">
-                            {student.schoolYear || 'الصف الثالث الثانوي'}
+                            {student.schoolYear || 'الصف الأول الثانوي'}
                           </span>
                         </div>
                       </div>

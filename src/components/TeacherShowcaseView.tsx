@@ -171,7 +171,7 @@ export const TeacherShowcaseView: React.FC<TeacherShowcaseViewProps> = ({
                     مادة: {teacher.subject || 'جميع المواد'}
                   </span>
                   {teacher.specialty &&
-                    !(teacher.schoolYear?.includes('الابتدائي') || teacher.schoolYear?.includes('الإعدادي')) && (
+                    (
                     <span className="px-3 py-1 rounded-xl bg-amber-50 text-amber-900 border border-amber-200">
                       الشعبة: {teacher.specialty}
                     </span>
@@ -199,7 +199,7 @@ export const TeacherShowcaseView: React.FC<TeacherShowcaseViewProps> = ({
               )}
               <a
                 href={`https://wa.me/201040672314?text=${encodeURIComponent(
-                  `السلام عليكم، أود الاستفسار والاشتراك في كورسات ${teacher.gender === 'أنثى' ? 'الأستاذة' : 'الأستاذ'}: ${teacher.name} (${teacher.subject || ''}) على منصة قلب العلم.`
+                  `السلام عليكم، أود الاستفسار والاشتراك في كورسات ${teacher.gender === 'أنثى' ? 'الأستاذة' : 'الأستاذ'}: ${teacher.name} (${teacher.subject || ''}) على منصة المتفلسفة .`
                 )}`}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -413,7 +413,7 @@ export const TeacherShowcaseView: React.FC<TeacherShowcaseViewProps> = ({
                           {course.schoolYear}
                         </span>
                         {course.division &&
-                          !(course.schoolYear?.includes('الابتدائي') || course.schoolYear?.includes('الإعدادي')) && (
+                          (
                           <span className="text-[9px] font-black px-2.5 py-0.5 rounded-full bg-amber-500 text-slate-950 font-bold">
                             {course.division}
                           </span>

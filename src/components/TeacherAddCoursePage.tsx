@@ -42,8 +42,11 @@ export const TeacherAddCoursePage: React.FC<TeacherAddCoursePageProps> = ({
     ? allCourses.find((c) => c.id === editingCourseId)
     : null;
 
-  // Security check: teacher cannot edit courses of another teacher!
+  // Security check: on private platform, أ/ سوزان كريم فهمي owns all platform courses
   const isOwner = !existingCourse ||
+    currentTeacher.email?.toLowerCase() === 'almtflsft@gmail.com' ||
+    currentTeacher.role === 'admin' ||
+    !currentTeacher.isAssistant ||
     existingCourse.instructorId === currentTeacher.id ||
     existingCourse.instructor === currentTeacher.name ||
     existingCourse.teacherName === currentTeacher.name;
@@ -51,7 +54,7 @@ export const TeacherAddCoursePage: React.FC<TeacherAddCoursePageProps> = ({
   // Form states
   const [courseTitle, setCourseTitle] = useState(existingCourse?.title || '');
   const [courseType, setCourseType] = useState<CourseType>(existingCourse?.courseType || 'integrated');
-  const [courseYear, setCourseYear] = useState<SchoolYearGrade>(existingCourse?.schoolYear as SchoolYearGrade || 'الصف الثالث الثانوي');
+  const [courseYear, setCourseYear] = useState<SchoolYearGrade>(existingCourse?.schoolYear as SchoolYearGrade || 'الصف الأول الثانوي');
   const [courseDivision, setCourseDivision] = useState<string>(existingCourse?.division || teacherSpecialty);
   const [coursePrice, setCoursePrice] = useState<number>(existingCourse?.price || 0);
   const [coursePaymentPhone, setCoursePaymentPhone] = useState<string>(existingCourse?.paymentPhone || '');
@@ -117,10 +120,7 @@ export const TeacherAddCoursePage: React.FC<TeacherAddCoursePageProps> = ({
       return;
     }
 
-    const isPrimaryOrPrep = courseYear.includes('الابتدائي') || courseYear.includes('الإعدادي');
-    const effectiveDivision = isPrimaryOrPrep
-      ? ''
-      : teacherSpecialty && teacherSpecialty !== 'عام لجميع الشعب'
+    const effectiveDivision = teacherSpecialty && teacherSpecialty !== 'عام لجميع الشعب'
       ? teacherSpecialty
       : courseDivision;
 
@@ -271,7 +271,7 @@ export const TeacherAddCoursePage: React.FC<TeacherAddCoursePageProps> = ({
               type="text"
               value={courseTitle}
               onChange={(e) => setCourseTitle(e.target.value)}
-              placeholder="مثال: كورس المراجعة النهائية في الفيزياء الكهربية 2027"
+              placeholder="مثال: كورس الشرح والمراجعة في مادة الفلسفة — الصف الأول الثانوي"
               required
               className="w-full p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white text-sm font-bold focus:outline-none focus:border-indigo-500 text-right"
             />
@@ -302,44 +302,21 @@ export const TeacherAddCoursePage: React.FC<TeacherAddCoursePageProps> = ({
                 onChange={(e) => {
                   const newGrade = e.target.value as SchoolYearGrade;
                   setCourseYear(newGrade);
-                  if (newGrade.includes('الابتدائي') || newGrade.includes('الإعدادي')) {
-                    setCourseDivision('');
-                  } else if (newGrade.includes('الثالث الثانوي')) {
-                    setCourseDivision('علمي علوم');
-                  } else {
-                    setCourseDivision('بكالوريا');
-                  }
+                  setCourseDivision('بكالوريا');
                 }}
                 className="w-full p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white text-xs font-bold focus:outline-none focus:border-indigo-500 text-right"
               >
-                <optgroup label="المرحلة الابتدائية (بدون شعبة)">
-                  <option value="الصف الأول الابتدائي">الصف الأول الابتدائي</option>
-                  <option value="الصف الثاني الابتدائي">الصف الثاني الابتدائي</option>
-                  <option value="الصف الثالث الابتدائي">الصف الثالث الابتدائي</option>
-                  <option value="الصف الرابع الابتدائي">الصف الرابع الابتدائي</option>
-                  <option value="الصف الخامس الابتدائي">الصف الخامس الابتدائي</option>
-                  <option value="الصف السادس الابتدائي">الصف السادس الابتدائي</option>
-                </optgroup>
-                <optgroup label="المرحلة الإعدادية (بدون شعبة)">
-                  <option value="الصف الأول الإعدادي">الصف الأول الإعدادي</option>
-                  <option value="الصف الثاني الإعدادي">الصف الثاني الإعدادي</option>
-                  <option value="الصف الثالث الإعدادي">الصف الثالث الإعدادي</option>
-                </optgroup>
-                <optgroup label="المرحلة الثانوية">
-                  <option value="الصف الأول الثانوي">الصف الأول الثانوي</option>
-                  <option value="الصف الثاني الثانوي">الصف الثاني الثانوي</option>
-                  <option value="الصف الثالث الثانوي">الصف الثالث الثانوي (دفعة 2027)</option>
-                </optgroup>
+                <option value="الصف الأول الثانوي">الصف الأول الثانوي — مادة الفلسفة</option>
               </select>
             </div>
           </div>
 
           {/* Row 3: Division (Only for Secondary Stage) & Price */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {!(courseYear.includes('الابتدائي') || courseYear.includes('الإعدادي')) && (
+            {true && (
               <div className="space-y-2 animate-fadeIn">
                 <label className="text-xs font-black text-slate-800 dark:text-slate-200 block">
-                  {courseYear.includes('الثالث الثانوي') ? 'الشعبة (تالتة ثانوي)' : 'الشعبة (المرحلة الثانوية)'}
+                  الشعبة (الصف الأول الثانوي)
                 </label>
                 {teacherSpecialty && teacherSpecialty !== 'عام لجميع الشعب' ? (
                   <input
@@ -348,20 +325,6 @@ export const TeacherAddCoursePage: React.FC<TeacherAddCoursePageProps> = ({
                     disabled
                     className="w-full p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white text-xs font-bold text-right disabled:opacity-75"
                   />
-                ) : courseYear.includes('الثالث الثانوي') ? (
-                  <select
-                    value={courseDivision}
-                    onChange={(e) => setCourseDivision(e.target.value)}
-                    className="w-full p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white text-xs font-bold text-right"
-                  >
-                    <option value="علمي علوم">علمي علوم</option>
-                    <option value="علمي رياضة">علمي رياضة</option>
-                    <option value="شعبة أدبي">شعبة أدبي</option>
-                    <option value="بكالوريا">بكالوريا</option>
-                    <option value="عام">عام</option>
-                    <option value="أزهر">أزهر</option>
-                    <option value="عام لجميع الشعب">عام لجميع الشعب</option>
-                  </select>
                 ) : (
                   <select
                     value={courseDivision}
@@ -380,7 +343,7 @@ export const TeacherAddCoursePage: React.FC<TeacherAddCoursePageProps> = ({
               </div>
             )}
 
-            <div className={`space-y-2 ${(courseYear.includes('الابتدائي') || courseYear.includes('الإعدادي')) ? 'sm:col-span-2' : ''}`}>
+            <div className={`space-y-2`}>
               <label className="text-xs font-black text-slate-800 dark:text-slate-200 block">
                 سعر الاشتراك (0 = مجاني بالكامل)
               </label>

@@ -67,11 +67,6 @@ import {
 import { User, Course, AppView, PlatformSettings, SchoolYearGrade, CourseType } from '../types';
 import { getSavedSubmissions, getSavedUsers, saveUsers, saveCurrentUser, saveCourses, deleteCourseFromServer, redeemStudentWalletCode } from '../data/initialData';
 import { CourseLessonManagerModal } from './CourseLessonManagerModal';
-import { 
-  requestWhatsAppParentOtp, 
-  verifyWhatsAppParentOtp, 
-  updateStudentGuardianVerificationInFirestore 
-} from '../auth';
 
 // Custom Interactive Tooltip for Recharts Progression Chart
 const CustomProgressionTooltip: React.FC<any> = ({ active, payload }) => {
@@ -146,7 +141,6 @@ export const MyAccountView: React.FC<MyAccountViewProps> = ({
   const [progressionChartType, setProgressionChartType] = useState<'area' | 'composed' | 'bar'>('area');
   const [progressionMetricMode, setProgressionMetricMode] = useState<'percentage' | 'score'>('percentage');
   const [selectedProgressionSubject, setSelectedProgressionSubject] = useState<string>('all');
-  const [showProgressionSample, setShowProgressionSample] = useState<boolean>(false);
 
   // Guardian WhatsApp Verification Modal States
   const [isVerifyModalOpen, setIsVerifyModalOpen] = useState(false);
@@ -241,19 +235,7 @@ export const MyAccountView: React.FC<MyAccountViewProps> = ({
 
     setIsVerifySubmitting(true);
     try {
-      const res = await requestWhatsAppParentOtp(clean, {
-        studentId: currentUser?.id,
-        studentPhone: currentUser?.phone,
-        studentName: currentUser?.name,
-      });
-
-      setVerifySessionId(res.sessionId);
-      setVerifyMaskedPhone(res.phoneMasked || clean);
-      setVerifyCooldown(res.cooldownSeconds || 60);
-      setVerifyDirectUrl(res.directWhatsAppUrl || '');
-      setVerifySimulatedOtp(res.simulatedOtp || '');
-      setVerifyStep('verify');
-      setVerifySuccess(res.message || 'تم إرسال رمز التحقق الخاص إلى واتساب ولي الأمر بنجاح.');
+      setVerifyError('خدمة التحقق عبر واتساب غير مفعلة حالياً.');
     } catch (err: any) {
       setVerifyError(err?.message || 'تعذر إرسال كود التحقق إلى واتساب ولي الأمر.');
     } finally {
@@ -274,8 +256,6 @@ export const MyAccountView: React.FC<MyAccountViewProps> = ({
 
     setIsVerifySubmitting(true);
     try {
-      await verifyWhatsAppParentOtp(verifySessionId, cleanCode, currentUser || undefined);
-
       const verifiedTimestamp = new Date().toISOString();
       const updatedUser: User = {
         ...currentUser!,
@@ -284,10 +264,6 @@ export const MyAccountView: React.FC<MyAccountViewProps> = ({
         guardianVerifiedPhone: verifyPhone,
         guardianVerifiedAt: verifiedTimestamp,
       };
-
-      if (currentUser?.id) {
-        updateStudentGuardianVerificationInFirestore(currentUser.id, verifyPhone).catch(() => {});
-      }
 
       const allUsers = getSavedUsers();
       saveUsers(allUsers.map((u) => (u.id === updatedUser.id ? updatedUser : u)));
@@ -493,96 +469,21 @@ export const MyAccountView: React.FC<MyAccountViewProps> = ({
     });
   }, [examEntries, examMetadataMap, studentSubmissions]);
 
-  // Sample progression items for demonstration when student is new
-  const sampleProgressionItems: ExamProgressionItem[] = useMemo(() => [
-    {
-      id: 'demo-1',
-      index: 1,
-      shortName: 'اختبار 1',
-      examTitle: 'اختبار تشخيصي تمهيدي للمستوى',
-      courseTitle: 'الفيزياء الكهربية للثانوية',
-      subject: 'الفيزياء',
-      score: 14,
-      maxScore: 20,
-      percentage: 70,
-      passed: true,
-      date: '2026-09-01',
-    },
-    {
-      id: 'demo-2',
-      index: 2,
-      shortName: 'اختبار 2',
-      examTitle: 'امتحان قانون كيرشوف وقوانين الدوائر',
-      courseTitle: 'الفيزياء الكهربية للثانوية',
-      subject: 'الفيزياء',
-      score: 16,
-      maxScore: 20,
-      percentage: 80,
-      passed: true,
-      date: '2026-09-03',
-      delta: 10,
-    },
-    {
-      id: 'demo-3',
-      index: 3,
-      shortName: 'اختبار 3',
-      examTitle: 'امتحان الكيمياء العضوية - الهيدروكربونات',
-      courseTitle: 'كيمياء الثانوية العامة',
-      subject: 'الكيمياء',
-      score: 22,
-      maxScore: 30,
-      percentage: 73,
-      passed: true,
-      date: '2026-09-05',
-      delta: -7,
-    },
-    {
-      id: 'demo-4',
-      index: 4,
-      shortName: 'اختبار 4',
-      examTitle: 'امتحان شامل: التأثير المغناطيسي وأجهزة القياس',
-      courseTitle: 'الفيزياء الكهربية للثانوية',
-      subject: 'الفيزياء',
-      score: 44,
-      maxScore: 50,
-      percentage: 88,
-      passed: true,
-      date: '2026-09-08',
-      delta: 15,
-    },
-    {
-      id: 'demo-5',
-      index: 5,
-      shortName: 'اختبار 5',
-      examTitle: 'اختبار المحاكاة الوزارية التجريبي لدفعة 2027',
-      courseTitle: 'المراجعة الشاملة لدفعة 2027',
-      subject: 'الفيزياء',
-      score: 57,
-      maxScore: 60,
-      percentage: 95,
-      passed: true,
-      date: '2026-09-10',
-      delta: 7,
-    },
-  ], []);
-
-  // Only show sample data if the user explicitly clicks the sample preview button
-  const isDisplayingSample = showProgressionSample;
-
+  
   // Active items: real exams by default (empty array when student has 0 exams)
   const activeProgressionItems = useMemo(() => {
-    const raw = showProgressionSample ? sampleProgressionItems : realProgressionItems;
+    const raw = realProgressionItems;
 
     if (selectedProgressionSubject === 'all') return raw;
     return raw.filter((item) => item.subject === selectedProgressionSubject);
-  }, [realProgressionItems, showProgressionSample, sampleProgressionItems, selectedProgressionSubject]);
+  }, [realProgressionItems, selectedProgressionSubject]);
 
   // Available subjects for filtering
   const availableProgressionSubjects = useMemo(() => {
-    const source = showProgressionSample ? sampleProgressionItems : realProgressionItems;
+    const source = realProgressionItems;
     const subjects = new Set(source.map((item) => item.subject));
     return Array.from(subjects).filter(Boolean);
-  }, [realProgressionItems, showProgressionSample, sampleProgressionItems]);
+  }, [realProgressionItems]);
 
   // Key KPI metrics on active data
   const progressionStats = useMemo(() => {
@@ -623,7 +524,7 @@ export const MyAccountView: React.FC<MyAccountViewProps> = ({
   let passCount = 0;      // 60-74
   let needsPracticeCount = 0; // < 60
 
-  const distributionSource = showProgressionSample ? sampleProgressionItems : realProgressionItems;
+  const distributionSource = realProgressionItems;
   distributionSource.forEach((res) => {
     const pct = res.percentage || 0;
     if (pct >= 85) excellentCount++;
@@ -652,7 +553,7 @@ export const MyAccountView: React.FC<MyAccountViewProps> = ({
                 <Users className="w-10 h-10 text-amber-300" />
               ) : (
                 (
-                  (currentUser.name && currentUser.name !== 'مستخدم منصة قلب العلم'
+                  (currentUser.name && currentUser.name !== 'مستخدم منصة المتفلسفة '
                     ? currentUser.name
                     : [currentUser.firstName, currentUser.secondName, currentUser.thirdName, currentUser.lastName]
                         .filter(Boolean)
@@ -664,7 +565,7 @@ export const MyAccountView: React.FC<MyAccountViewProps> = ({
             <div className="space-y-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="text-xl sm:text-2xl font-black text-white">
-                  {(currentUser.name && currentUser.name !== 'مستخدم منصة قلب العلم'
+                  {(currentUser.name && currentUser.name !== 'مستخدم منصة المتفلسفة '
                     ? currentUser.name
                     : [currentUser.firstName, currentUser.secondName, currentUser.thirdName, currentUser.lastName]
                         .filter(Boolean)
@@ -977,52 +878,8 @@ export const MyAccountView: React.FC<MyAccountViewProps> = ({
                         الدرجة الفعلية
                       </button>
                     </div>
-
-                    {/* Demo / Sample Toggle */}
-                    {realProgressionItems.length === 0 ? (
-                      <button
-                        onClick={() => setShowProgressionSample(!showProgressionSample)}
-                        className="px-3 py-1.5 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 text-xs font-bold hover:bg-indigo-100 transition-colors flex items-center gap-1.5 cursor-pointer"
-                      >
-                        <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                        <span>{showProgressionSample ? 'إخفاء المعاينة التوضيحية' : 'معاينة نموذج التطور'}</span>
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => setShowProgressionSample(!showProgressionSample)}
-                        className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer ${
-                          showProgressionSample
-                            ? 'border-amber-300 bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-200'
-                            : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50'
-                        }`}
-                      >
-                        <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                        <span>{showProgressionSample ? 'العودة لبياناتي الفعلية' : 'نموذج دفعة 2027'}</span>
-                      </button>
-                    )}
                   </div>
                 </div>
-
-                {/* Notice when sample demo is displayed */}
-                {isDisplayingSample && (
-                  <div className="p-3.5 rounded-2xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-                    <div className="flex items-center gap-2 text-indigo-900 dark:text-indigo-200">
-                      <Sparkles className="w-4 h-4 text-amber-500 shrink-0" />
-                      <span>
-                        <strong>معاينة نموذج التطور الأكاديمي لدفعة 2027:</strong> هذا المخطط يوضح كيفية رصد وتتبع تطور درجاتك تلقائياً عند خوض الامتحانات التتابعية للكورسات.
-                      </span>
-                    </div>
-                    {onNavigate && (
-                      <button
-                        onClick={() => onNavigate('courses')}
-                        className="px-3.5 py-1.5 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 text-xs shrink-0 cursor-pointer shadow-xs inline-flex items-center gap-1.5"
-                      >
-                        <span>خُض أول اختبار الآن</span>
-                        <ArrowUpRight className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                )}
 
                 {/* Subject Filter Pills (if multiple subjects exist) */}
                 {availableProgressionSubjects.length > 1 && (
@@ -1556,8 +1413,7 @@ export const MyAccountView: React.FC<MyAccountViewProps> = ({
                 <span className="font-black text-indigo-600 dark:text-indigo-400">{currentUser.schoolYear}</span>
               </div>
 
-              {!(currentUser.schoolYear?.includes('الابتدائي') || currentUser.schoolYear?.includes('الإعدادي')) &&
-                (currentUser.division || currentUser.educationSystem) && (
+              {(currentUser.division || currentUser.educationSystem) && (
                 <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-center justify-between">
                   <span className="text-slate-500 dark:text-slate-400 font-medium">الشعبة / نظام المرحلة الثانوية:</span>
                   <span className="font-black text-amber-600 dark:text-amber-400">
@@ -1574,7 +1430,7 @@ export const MyAccountView: React.FC<MyAccountViewProps> = ({
               <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-center justify-between">
                 <span className="text-slate-500 dark:text-slate-400 font-medium">المدرسة ونظام التعليم:</span>
                 <span className="font-black text-slate-900 dark:text-white">
-                  {currentUser.schoolName || (currentUser.schoolYear?.includes('الابتدائي') ? 'مدرسة ابتدائية' : currentUser.schoolYear?.includes('الإعدادي') ? 'مدرسة إعدادية' : 'مدرسة ثانوية')} ({currentUser.educationSystem || 'عام'})
+                  {currentUser.schoolName || 'مدرسة ثانوية'} ({currentUser.educationSystem || 'عام'})
                 </span>
               </div>
 

@@ -15,6 +15,7 @@ import {
 import { BacBranch, ChatMessage, SubjectInfo } from '../types';
 import { BAC_SUBJECTS, QUICK_TUTOR_SUGGESTIONS, IDENTITY_NOTICE } from '../data/bacData';
 import ReactMarkdown from 'react-markdown';
+import { getClientAuthHeaders } from '../utils/authToken';
 
 interface ChatTutorProps {
   branch: BacBranch;
@@ -99,9 +100,10 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ branch, onShowIdentityModa
       const selectedSubjectObj = BAC_SUBJECTS.find((s) => s.id === selectedSubject);
       const subjectName = selectedSubjectObj ? selectedSubjectObj.name : 'عامة / شاملة';
 
+      const headers = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
       const response = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           message: textToSend,
           branch: branch === 'scientific' ? 'الفرع العلمي' : 'الفرع الأدبي',

@@ -41,7 +41,6 @@ import {
   PlatformSettings
 } from './types';
 import { Navbar } from './components/Navbar';
-import { Logo } from './components/Logo';
 import { TikTokIcon } from './components/TikTokIcon';
 import { LandingHome } from './components/LandingHome';
 import { CoursesView } from './components/CoursesView';
@@ -79,7 +78,18 @@ import { StudentReviewStatus } from './components/StudentReviewStatus';
 import { PrivacyTermsModal } from './components/PrivacyTermsModal';
 import { FloatingSupportChat } from './components/FloatingSupportChat';
 import { AssistantWorkspaceView } from './components/AssistantWorkspaceView';
-import { getDeviceInfoPayload } from './utils/deviceFingerprint';
+import { ThemeCustomizerModal } from './components/ThemeCustomizerModal';
+import { DeveloperFrameModal } from './components/DeveloperFrameModal';
+import {
+  applyPlatformThemeColors,
+  resetPlatformThemeColors,
+  loadSavedThemeColors,
+  isLightHex,
+  PlatformThemeConfig,
+} from './utils/themeEngine';
+import { getDeviceInfoPayload, getStableBrowserFingerprint } from './utils/deviceFingerprint';
+import { clearServerAuthToken, getClientAuthHeaders, getSessionToken, saveSessionToken } from './utils/authToken';
+import { connectRealtimeSessionWatcher, installSessionFetchInterceptor } from './utils/sessionGuard';
 import {
   getSavedPlatformSettings,
   savePlatformSettings,
@@ -112,7 +122,7 @@ import {
 } from './data/initialData';
 import { playNotificationSound } from './utils/notifications';
 import { DAILY_MOTIVATION, IDENTITY_NOTICE } from './data/bacData';
-import { subscribeToAuthChanges, fetchUserProfile, logoutUser, enrollStudentInCourseInFirestore, deleteUserFromFirestore, getPendingSignupProfile, db, auth } from './auth';
+import { subscribeToAuthChanges, fetchUserProfile, logoutUser, deleteUserFromFirestore, getPendingSignupProfile, db, auth } from './auth';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 
 /**
@@ -151,12 +161,12 @@ export const ensureUserPrivileges = (u: User): User => {
   const rawName = (u.name || '').trim();
   const isPlaceholderName =
     !rawName ||
-    rawName === 'مستخدم منصة قلب العلم' ||
-    rawName === 'طالب منصة قلب العلم' ||
+    rawName === 'مستخدم منصة المتفلسفة' ||
+    rawName === 'طالب منصة المتفلسفة' ||
     rawName === 'مستخدم المنصة';
 
   let resolvedPhone = (u.phone || '').trim();
-  if (!resolvedPhone && u.email && (u.email.endsWith('@qalb-alam.edu') || u.email.endsWith('@qalbalelm.edu'))) {
+  if (!resolvedPhone && u.email && u.email.endsWith('@al-motafalsifa.edu')) {
     resolvedPhone = u.email.split('@')[0];
   }
 
@@ -171,17 +181,17 @@ export const ensureUserPrivileges = (u: User): User => {
       ? combinedPartsName
       : resolvedPhone
       ? `طالب (${resolvedPhone})`
-      : 'مستخدم منصة قلب العلم';
+      : 'مستخدم منصة المتفلسفة';
 
   const resolvedName = !isPlaceholderName ? rawName : fallbackName;
 
   const rawSchoolYear = (u.schoolYear || '').trim();
   const resolvedSchoolYear =
-    !rawSchoolYear || rawSchoolYear === 'طالب منصة قلب العلم'
-      ? u.role === 'admin' || u.email === 'hos098sam@gmail.com'
-        ? 'إدارة المنصة'
-        : 'الصف الثالث الثانوي'
-      : rawSchoolYear;
+    rawSchoolYear && rawSchoolYear !== 'طالب منصة المتفلسفة' && rawSchoolYear !== 'طالب منصة المتفلسفة'
+      ? rawSchoolYear
+      : u.role === 'admin' || u.email === 'hos098sam@gmail.com'
+      ? 'إدارة المنصة'
+      : (u.grade || 'الصف الأول الثانوي');
 
   const updatedUser: User = {
     ...u,
@@ -192,15 +202,43 @@ export const ensureUserPrivileges = (u: User): User => {
     enrolledCourseIds: mergedEnrolled,
   };
 
-  if (u.email === 'hos098sam@gmail.com') {
+  const lowerEmail = String(u.email || '').trim().toLowerCase();
+  if (lowerEmail === 'hos098sam@gmail.com') {
     return {
       ...updatedUser,
       role: 'admin',
       status: 'active',
-      name: updatedUser.name && updatedUser.name !== 'مستخدم منصة قلب العلم' ? updatedUser.name : 'إدارة المنصة',
+      name: updatedUser.name && updatedUser.name !== 'مستخدم منصة المتفلسفة' ? updatedUser.name : 'إدارة المنصة',
+    };
+  }
+  if (lowerEmail === 'almtflsft@gmail.com') {
+    return {
+      ...updatedUser,
+      role: 'teacher',
+      status: 'active',
+      name:
+        updatedUser.name &&
+        updatedUser.name !== 'مستخدم منصة المتفلسفة' &&
+        !updatedUser.name.startsWith('طالب')
+          ? updatedUser.name
+          : 'أ/ سوزان كريم فهمي',
+      subject: updatedUser.subject || 'الفلسفة والمنطق',
+      schoolYear: updatedUser.schoolYear || 'الصف الأول الثانوي',
     };
   }
   return updatedUser;
+};
+
+const defaultSafePlatformSettings: PlatformSettings = {
+  platformName: 'منصة المتفلسفة التعليمية',
+  heroTitle: 'منصة المتفلسفة التعليمية 2027',
+  heroSubtitle: 'المنصة الخاصة للأستاذة سوزان كريم فهمي',
+  supervisorName: 'أ/ سوزان كريم فهمي',
+  supervisorTitle: 'معلمة الفلسفة والمنطق',
+  heroBannerImage: '/logo.png',
+  announcementText: '',
+  contactPhone: '01040672314',
+  supportWhatsapp: '01040672314',
 };
 
 export default function App() {
@@ -242,8 +280,14 @@ export default function App() {
   const [isFlutterAppModalOpen, setIsFlutterAppModalOpen] = useState(false);
   const [isPrivacyTermsModalOpen, setIsPrivacyTermsModalOpen] = useState(false);
   const [privacyTermsInitialTab, setPrivacyTermsInitialTab] = useState<'privacy' | 'terms'>('privacy');
+  const [isDeveloperFrameOpen, setIsDeveloperFrameOpen] = useState(false);
   const [isHomeVisualEditorOpen, setIsHomeVisualEditorOpen] = useState(false);
+  const [isThemeCustomizerOpen, setIsThemeCustomizerOpen] = useState(false);
+  const [customThemeConfig, setCustomThemeConfig] = useState<PlatformThemeConfig | null>(() => loadSavedThemeColors());
   const [paymentToast, setPaymentToast] = useState<{ type: 'success' | 'failed'; message: string } | null>(null);
+  const [cloudSyncNotice, setCloudSyncNotice] = useState<string | null>(null);
+  const [adminRequestedTab, setAdminRequestedTab] = useState<string | null>(null);
+  const [adminTabNonce, setAdminTabNonce] = useState<number>(0);
 
   // === URL QUERY PARAM LISTENER (e.g. ?view=privacy or ?payment_status=success) ===
   useEffect(() => {
@@ -256,22 +300,43 @@ export default function App() {
 
       if (paymentStatus === 'success' || paymentStatus === 'paid') {
         if (currentUser && paymentCourseId) {
-          const prev = currentUser.enrolledCourseIds || [];
-          if (!prev.includes(paymentCourseId)) {
-            const updated: User = {
-              ...currentUser,
-              enrolledCourseIds: Array.from(new Set([...prev, paymentCourseId])),
-            };
-            setCurrentUser(updated);
-            saveCurrentUser(updated);
-            saveStudentEnrolledCourse(currentUser.id, paymentCourseId);
-            enrollStudentInCourseInFirestore(currentUser.id, paymentCourseId).catch(() => {});
-          }
+          (async () => {
+            try {
+              const headers = await getClientAuthHeaders();
+              const checkRes = await fetch(
+                `/api/courses/${encodeURIComponent(paymentCourseId)}/enrollment-status`,
+                { headers }
+              );
+              const checkData = await checkRes.json().catch(() => ({}));
+              if (checkRes.ok && checkData?.isEnrolledInDb) {
+                const prev = currentUser.enrolledCourseIds || [];
+                if (!prev.includes(paymentCourseId)) {
+                  const updated: User = {
+                    ...currentUser,
+                    enrolledCourseIds: Array.from(new Set([...prev, paymentCourseId])),
+                  };
+                  setCurrentUser(updated);
+                  saveCurrentUser(updated);
+                  saveStudentEnrolledCourse(currentUser.id, paymentCourseId);
+                }
+                setPaymentToast({
+                  type: 'success',
+                  message: '🎉 تم تأكيد الدفع بنجاح عبر بوابة فواتيرك! تم تفعيل واشتراك الكورس في حسابك.',
+                });
+              } else {
+                setPaymentToast({
+                  type: 'failed',
+                  message: 'جاري التحقق من حالة الدفع من البوابة، يرجى إعادة تحميل الصفحة أو التواصل مع الدعم إذا تم الخصم.',
+                });
+              }
+            } catch {
+              setPaymentToast({
+                type: 'failed',
+                message: 'تعذر التحقق من حالة الدفع حالياً. يرجى تحديث الصفحة بعد قليل.',
+              });
+            }
+          })();
         }
-        setPaymentToast({
-          type: 'success',
-          message: '🎉 تم تأكيد الدفع بنجاح عبر بوابة فواتيرك! تم تفعيل واشتراك الكورس فوراً في حسابك.',
-        });
         if (paymentCourseId) {
           const matchedCourse = courses.find((c) => c.id === paymentCourseId);
           if (matchedCourse) {
@@ -322,25 +387,52 @@ export default function App() {
     const handleStatus = (e: any) => {
       if (e.detail) setCloudStatus(e.detail);
     };
-    window.addEventListener('qalb_alam_cloud_status', handleStatus);
-    return () => window.removeEventListener('qalb_alam_cloud_status', handleStatus);
+    window.addEventListener('al_motafalsifa_cloud_status', handleStatus);
+    return () => window.removeEventListener('al_motafalsifa_cloud_status', handleStatus);
   }, []);
 
   const isLoggingOutRef = useRef<boolean>(false);
 
-  // Helper to force logout when another device logs into the same student account
-  const triggerConcurrentDeviceLogout = () => {
+  // Helper to force logout immediately when another device logs into the same student account
+  const triggerConcurrentDeviceLogout = (customMessage?: string) => {
     if (isLoggingOutRef.current) return;
     const activeMe = currentUserRef.current;
-    // Enforce strictly on student accounts as requested
+    // Enforce strictly on student accounts
     if (!activeMe || activeMe.role !== 'student') return;
 
-    console.warn('🚨 [Single-Device Guard] تم اكتشاف تسجيل دخول لحساب الطالب من جهاز آخر! جاري تسجيل الخروج من هذا الجهاز...');
-    setSessionConflictNotice(
-      'تم تسجيل الخروج من هذا الجهاز تلقائياً لأنه تم فتح حسابك وتسجيل الدخول من جهاز آخر الآن. يُسمح بفتح حساب الطالب على جهاز واحد فقط في نفس الوقت لحماية حسابك.'
-    );
-    handleLogout();
+    console.warn('🚨 [Single-Device Guard] تم تسجيل الدخول من جهاز آخر — طرد الجلسة القديمة فوراً...');
+    setSessionConflictNotice(customMessage || 'تم تسجيل الدخول من جهاز آخر');
+    performLogout('login');
   };
+
+  const triggerConcurrentLogoutRef = useRef(triggerConcurrentDeviceLogout);
+  triggerConcurrentLogoutRef.current = triggerConcurrentDeviceLogout;
+
+  // Install global fetch interceptor + real-time WebSocket/SSE eviction listener
+  useEffect(() => {
+    installSessionFetchInterceptor((msg) => {
+      triggerConcurrentLogoutRef.current(msg || 'تم تسجيل الدخول من جهاز آخر');
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!currentUser?.id || currentUser.role !== 'student') return;
+    const token =
+      getSessionToken() ||
+      currentUser.current_session_token ||
+      currentUser.activeSessionId ||
+      '';
+    if (!token) return;
+
+    return connectRealtimeSessionWatcher({
+      userId: currentUser.id,
+      phone: currentUser.phone,
+      sessionToken: token,
+      onForceLogout: (msg) => {
+        triggerConcurrentLogoutRef.current(msg || 'تم تسجيل الدخول من جهاز آخر');
+      },
+    });
+  }, [currentUser?.id, currentUser?.role, currentUser?.current_session_token, currentUser?.activeSessionId]);
 
   // === FIREBASE AUTH STATE LISTENER (onAuthStateChanged) ===
   useEffect(() => {
@@ -368,27 +460,27 @@ export default function App() {
             null;
 
           if (profile) {
-            let localSessionId = localStorage.getItem('qalb_alam_device_session_id');
-            if (!localSessionId && profile.activeSessionId) {
-              localSessionId = profile.activeSessionId;
-              try {
-                localStorage.setItem('qalb_alam_device_session_id', localSessionId);
-              } catch {}
+            const remoteProfileToken = profile.current_session_token || profile.activeSessionId || '';
+            let localSessionId = getSessionToken();
+            if (!localSessionId && remoteProfileToken) {
+              localSessionId = remoteProfileToken;
+              saveSessionToken(localSessionId);
             }
             const verifiedUser: User = ensureUserPrivileges({
               ...localCandidate,
               ...profile,
               name:
-                profile.name && profile.name !== 'مستخدم منصة قلب العلم'
+                profile.name && profile.name !== 'مستخدم منصة المتفلسفة'
                   ? profile.name
                   : localCandidate?.name || fbUser.displayName || profile.name,
               phone: profile.phone || localCandidate?.phone || '',
               parentPhone: profile.parentPhone || localCandidate?.parentPhone || '',
               schoolYear:
-                profile.schoolYear && profile.schoolYear !== 'طالب منصة قلب العلم'
+                profile.schoolYear && profile.schoolYear !== 'طالب منصة المتفلسفة'
                   ? profile.schoolYear
-                  : localCandidate?.schoolYear || profile.schoolYear || 'الصف الثالث الثانوي',
-              activeSessionId: localSessionId || profile.activeSessionId,
+                  : profile.schoolYear || localCandidate?.schoolYear || 'الصف الأول الثانوي',
+              current_session_token: localSessionId || remoteProfileToken || undefined,
+              activeSessionId: localSessionId || remoteProfileToken || undefined,
               emailVerified: fbUser.emailVerified,
             });
             setCurrentUser(verifiedUser);
@@ -411,14 +503,23 @@ export default function App() {
               return;
             }
             // New or minimal user
+            const fbLowerEmail = (fbUser.email || '').trim().toLowerCase();
             const fallbackUser: User = ensureUserPrivileges({
               id: fbUser.uid,
-              name: fbUser.displayName || 'مستخدم منصة قلب العلم',
+              name:
+                fbLowerEmail === 'almtflsft@gmail.com'
+                  ? 'أ/ سوزان كريم فهمي'
+                  : fbUser.displayName || 'مستخدم منصة المتفلسفة',
               email: fbUser.email || '',
               phone: '',
               parentPhone: '',
-              schoolYear: 'الصف الثالث الثانوي',
-              role: fbUser.email === 'hos098sam@gmail.com' ? 'admin' : 'student',
+              schoolYear: localCandidate?.schoolYear || 'الصف الأول الثانوي',
+              role:
+                fbLowerEmail === 'hos098sam@gmail.com'
+                  ? 'admin'
+                  : fbLowerEmail === 'almtflsft@gmail.com'
+                  ? 'teacher'
+                  : 'student',
               status: 'active',
               registeredAt: new Date().toISOString().split('T')[0],
               emailVerified: fbUser.emailVerified,
@@ -476,9 +577,9 @@ export default function App() {
         (snap) => {
           if (!snap.exists()) {
             // Document does not exist yet in Firestore.
-            // Only write user data if it is a complete profile (never overwrite with placeholder 'مستخدم منصة قلب العلم')
+            // Only write user data if it is a complete profile (never overwrite with placeholder 'مستخدم منصة المتفلسفة')
             const me = currentUserRef.current;
-            if (me?.id && me.name && me.name !== 'مستخدم منصة قلب العلم') {
+            if (me?.id && me.name && me.name !== 'مستخدم منصة المتفلسفة') {
               try {
                 const { password, ...safeMe } = me as any;
                 setDoc(
@@ -496,30 +597,35 @@ export default function App() {
 
           const freshData = snap.data() as User;
 
-          // Single-device session check for students
-          if (freshData.activeSessionId) {
+          // Single-device UUID current_session_token check for students via Firestore realtime listener
+          const remoteToken = freshData.current_session_token || freshData.activeSessionId;
+          if (remoteToken) {
             try {
-              const localSessionId = localStorage.getItem('qalb_alam_device_session_id');
-              const loginTs = Number(localStorage.getItem('qalb_alam_session_login_ts') || '0');
-              const isPastLoginGrace = Date.now() - loginTs > 10000;
+              const localSessionId = getSessionToken();
+              const loginTs = Number(localStorage.getItem('al_motafalsifa_session_login_ts') || '0');
+              const isPastLoginGrace = Date.now() - loginTs > 8000;
 
               if (!localSessionId) {
-                localStorage.setItem('qalb_alam_device_session_id', freshData.activeSessionId);
+                saveSessionToken(remoteToken);
               } else if (
-                localSessionId !== freshData.activeSessionId &&
+                localSessionId !== remoteToken &&
                 isPastLoginGrace &&
+                !snap.metadata?.fromCache &&
                 (freshData.role === 'student' || currentUserRef.current?.role === 'student')
               ) {
-                const remoteTsMatch = String(freshData.activeSessionId).match(/sess_(\d+)_/);
+                const remoteTsMatch = String(remoteToken).match(/sess_(\d+)_/);
                 const localTsMatch = String(localSessionId).match(/sess_(\d+)_/);
                 const remoteTs = remoteTsMatch ? Number(remoteTsMatch[1]) : 0;
                 const localTs = localTsMatch ? Number(localTsMatch[1]) : loginTs;
 
-                // If this is a cached snapshot or older session from before our latest login, sync our localSessionId instead of logging out
-                if (snap.metadata?.fromCache || remoteTs <= localTs + 2000) {
-                  setDoc(userDocRef, { activeSessionId: localSessionId }, { merge: true }).catch(() => {});
+                if (remoteTs > 0 && localTs > 0 && remoteTs <= localTs + 2000) {
+                  setDoc(
+                    userDocRef,
+                    { current_session_token: localSessionId, activeSessionId: localSessionId },
+                    { merge: true }
+                  ).catch(() => {});
                 } else {
-                  triggerConcurrentDeviceLogout();
+                  triggerConcurrentDeviceLogout('تم تسجيل الدخول من جهاز آخر');
                   return;
                 }
               }
@@ -532,17 +638,17 @@ export default function App() {
             ...currentMe,
             ...freshData,
             name:
-              freshData.name && freshData.name !== 'مستخدم منصة قلب العلم'
+              freshData.name && freshData.name !== 'مستخدم منصة المتفلسفة'
                 ? freshData.name
-                : currentMe?.name && currentMe.name !== 'مستخدم منصة قلب العلم'
+                : currentMe?.name && currentMe.name !== 'مستخدم منصة المتفلسفة'
                 ? currentMe.name
                 : freshData.name,
             phone: freshData.phone || currentMe?.phone || '',
             parentPhone: freshData.parentPhone || currentMe?.parentPhone || '',
             schoolYear:
-              freshData.schoolYear && freshData.schoolYear !== 'طالب منصة قلب العلم'
+              freshData.schoolYear && freshData.schoolYear !== 'طالب منصة المتفلسفة'
                 ? freshData.schoolYear
-                : currentMe?.schoolYear && currentMe.schoolYear !== 'طالب منصة قلب العلم'
+                : currentMe?.schoolYear && currentMe.schoolYear !== 'طالب منصة المتفلسفة'
                 ? currentMe.schoolYear
                 : freshData.schoolYear,
             id: currentMe?.id || freshData.id || snap.id,
@@ -553,9 +659,9 @@ export default function App() {
 
           // Self-heal Firestore document if it had placeholder values that were repaired from 4-part name / email
           if (
-            (freshData.name === 'مستخدم منصة قلب العلم' && freshUser.name !== 'مستخدم منصة قلب العلم') ||
+            (freshData.name === 'مستخدم منصة المتفلسفة' && freshUser.name !== 'مستخدم منصة المتفلسفة') ||
             (!freshData.phone && freshUser.phone) ||
-            (freshData.schoolYear === 'طالب منصة قلب العلم' && freshUser.schoolYear !== 'طالب منصة قلب العلم')
+            (freshData.schoolYear === 'طالب منصة المتفلسفة' && freshUser.schoolYear !== 'طالب منصة المتفلسفة')
           ) {
             setDoc(
               userDocRef,
@@ -742,17 +848,185 @@ export default function App() {
     };
   }, []);
 
+  const isAdminUser = currentUser?.role === 'admin' || currentUser?.email === 'hos098sam@gmail.com';
+
+  useEffect(() => {
+    const cloudCustom = platformSettings?.customTheme;
+    const cloudSig = JSON.stringify({
+      enabled: Boolean(cloudCustom?.enabled),
+      primaryColor: cloudCustom?.primaryColor || '',
+      bgColor: cloudCustom?.bgColor || '',
+      textColor: cloudCustom?.textColor || '',
+      defaultMode: cloudCustom?.defaultMode || '',
+      updatedAt: cloudCustom?.updatedAt || 0,
+    });
+
+    let lastSeenSig = '';
+    let hasLocalOverride = false;
+    try {
+      lastSeenSig = localStorage.getItem('sozan_last_cloud_theme_sig') || '';
+      hasLocalOverride = localStorage.getItem('sozan_user_theme_override') === 'true';
+    } catch {}
+
+    const cloudChanged = cloudSig !== lastSeenSig;
+
+    if (cloudChanged) {
+      try {
+        localStorage.setItem('sozan_last_cloud_theme_sig', cloudSig);
+        localStorage.removeItem('sozan_user_theme_override');
+      } catch {}
+      hasLocalOverride = false;
+    }
+
+    if (hasLocalOverride) return;
+
+    if (cloudCustom) {
+      if (cloudCustom.enabled && cloudCustom.bgColor) {
+        const applied = applyPlatformThemeColors(
+          cloudCustom.primaryColor,
+          cloudCustom.bgColor,
+          cloudCustom.textColor,
+          true
+        );
+        setCustomThemeConfig(applied);
+        setTheme(isLightHex(applied.bgColor) ? 'light' : 'dark');
+      } else {
+        resetPlatformThemeColors(true);
+        setCustomThemeConfig(null);
+        if (cloudCustom.defaultMode === 'dark' || cloudCustom.defaultMode === 'light') {
+          setTheme(cloudCustom.defaultMode);
+        }
+      }
+      return;
+    }
+
+    const savedCustom = loadSavedThemeColors();
+    if (savedCustom && savedCustom.enabled) {
+      applyPlatformThemeColors(
+        savedCustom.primaryColor,
+        savedCustom.bgColor,
+        savedCustom.textColor,
+        false
+      );
+      setCustomThemeConfig(savedCustom);
+    }
+  }, [platformSettings?.customTheme]);
+
   useEffect(() => {
     try {
+      if (customThemeConfig && customThemeConfig.enabled) return;
       if (theme === 'dark') document.documentElement.classList.add('dark');
       else document.documentElement.classList.remove('dark');
       localStorage.setItem('theme', theme);
     } catch {}
-  }, [theme]);
+  }, [theme, customThemeConfig]);
 
-  const toggleTheme = () => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  const toggleTheme = () => {
+    const nextTheme: 'light' | 'dark' = theme === 'dark' ? 'light' : 'dark';
+    try {
+      localStorage.setItem('sozan_user_theme_override', 'true');
+      localStorage.setItem('theme', nextTheme);
+    } catch {}
+    resetPlatformThemeColors(true);
+    setCustomThemeConfig(null);
+    if (nextTheme === 'dark') document.documentElement.classList.add('dark');
+    else document.documentElement.classList.remove('dark');
+    setTheme(nextTheme);
+  };
+
+  const handleApplyGlobalCustomTheme = (cfg: PlatformThemeConfig) => {
+    if (!isAdminUser) return;
+    const now = Date.now();
+    const applied = applyPlatformThemeColors(cfg.primaryColor, cfg.bgColor, cfg.textColor, true);
+    const nextCustom = {
+      enabled: true,
+      primaryColor: applied.primaryColor,
+      bgColor: applied.bgColor,
+      textColor: applied.textColor,
+      updatedAt: now,
+    };
+    try {
+      localStorage.removeItem('sozan_user_theme_override');
+      localStorage.setItem(
+        'sozan_last_cloud_theme_sig',
+        JSON.stringify({
+          enabled: true,
+          primaryColor: nextCustom.primaryColor,
+          bgColor: nextCustom.bgColor,
+          textColor: nextCustom.textColor,
+          defaultMode: '',
+          updatedAt: now,
+        })
+      );
+    } catch {}
+    setCustomThemeConfig(applied);
+    setTheme(isLightHex(applied.bgColor) ? 'light' : 'dark');
+    handleUpdateSettings({
+      ...platformSettings,
+      customTheme: nextCustom,
+    });
+  };
+
+  const handleResetGlobalCustomTheme = () => {
+    if (!isAdminUser) return;
+    const now = Date.now();
+    const nextCustom = {
+      enabled: false,
+      primaryColor: '',
+      bgColor: '',
+      textColor: '',
+      defaultMode: 'light' as const,
+      updatedAt: now,
+    };
+    try {
+      localStorage.removeItem('sozan_user_theme_override');
+      localStorage.setItem(
+        'sozan_last_cloud_theme_sig',
+        JSON.stringify({
+          ...nextCustom,
+        })
+      );
+    } catch {}
+    resetPlatformThemeColors(true);
+    setCustomThemeConfig(null);
+    setTheme('light');
+    handleUpdateSettings({
+      ...platformSettings,
+      customTheme: nextCustom,
+    });
+  };
+
+  const handleSetGlobalDefaultMode = (mode: 'light' | 'dark') => {
+    if (!isAdminUser) return;
+    const now = Date.now();
+    const nextCustom = {
+      enabled: false,
+      primaryColor: '',
+      bgColor: '',
+      textColor: '',
+      defaultMode: mode,
+      updatedAt: now,
+    };
+    try {
+      localStorage.removeItem('sozan_user_theme_override');
+      localStorage.setItem(
+        'sozan_last_cloud_theme_sig',
+        JSON.stringify({
+          ...nextCustom,
+        })
+      );
+    } catch {}
+    resetPlatformThemeColors(true);
+    setCustomThemeConfig(null);
+    setTheme(mode);
+    handleUpdateSettings({
+      ...platformSettings,
+      customTheme: nextCustom,
+    });
+  };
 
   const handleUpdateSettings = (newSettings: PlatformSettings) => {
+    if (!isAdminUser) return;
     setPlatformSettings(newSettings);
     savePlatformSettings(newSettings);
   };
@@ -869,17 +1143,21 @@ export default function App() {
     }, 250);
   };
 
-  // === SERVER HEARTBEAT FOR SINGLE-DEVICE STUDENT SESSION & ROLE INTEGRITY ENFORCEMENT ===
+  // === SERVER HEARTBEAT FOR SINGLE-DEVICE STUDENT SESSION, FINGERPRINT & ROLE INTEGRITY ===
   useEffect(() => {
     if (!currentUser?.id) return;
 
-    // Ensure current device has a session ID registered if missing
+    // Ensure current device has a session token registered if missing
     try {
-      let localSessionId = localStorage.getItem('qalb_alam_device_session_id');
+      let localSessionId = getSessionToken();
       if (!localSessionId) {
-        localSessionId = currentUser.activeSessionId || `sess_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
-        localStorage.setItem('qalb_alam_device_session_id', localSessionId);
-        localStorage.setItem('qalb_alam_session_login_ts', String(Date.now()));
+        localSessionId =
+          currentUser.current_session_token ||
+          currentUser.activeSessionId ||
+          (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+            ? crypto.randomUUID()
+            : `sess_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`);
+        saveSessionToken(localSessionId);
       }
     } catch {}
 
@@ -888,14 +1166,28 @@ export default function App() {
       const activeMe = currentUserRef.current;
       if (!activeMe?.id) return;
 
-      const localSessionId = localStorage.getItem('qalb_alam_device_session_id') || activeMe.activeSessionId || '';
-      const loginTs = Number(localStorage.getItem('qalb_alam_session_login_ts') || '0');
+      const localSessionId =
+        getSessionToken() ||
+        activeMe.current_session_token ||
+        activeMe.activeSessionId ||
+        '';
+      const loginTs = Number(localStorage.getItem('al_motafalsifa_session_login_ts') || '0');
       if (Date.now() - loginTs <= 3000) return;
 
       try {
+        const authHeaders = await getClientAuthHeaders();
+        const fp = getStableBrowserFingerprint();
         const res = await fetch(
-          `/api/auth/check-session/${encodeURIComponent(activeMe.id)}?phone=${encodeURIComponent(activeMe.phone || '')}&sessionId=${encodeURIComponent(localSessionId)}&role=${encodeURIComponent(activeMe.role || '')}`
+          `/api/auth/check-session/${encodeURIComponent(activeMe.id)}?phone=${encodeURIComponent(activeMe.phone || '')}&sessionId=${encodeURIComponent(localSessionId)}&role=${encodeURIComponent(activeMe.role || '')}&fingerprint=${encodeURIComponent(fp)}`,
+          { headers: authHeaders }
         );
+        if (res.status === 401) {
+          const errData = await res.json().catch(() => null);
+          if (errData?.forceLogout || errData?.sessionKilled || errData?.code === 'FORCE_LOGOUT') {
+            triggerConcurrentDeviceLogout(errData?.error || 'تم تسجيل الدخول من جهاز آخر');
+          }
+          return;
+        }
         if (!res.ok) return;
         const data = await res.json();
         if (data && data.success) {
@@ -908,39 +1200,23 @@ export default function App() {
 
           if (activeMe.role !== 'student') return;
 
-          if (!data.activeSessionId) {
+          const postHeaders = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
+          const serverToken = data.current_session_token || data.activeSessionId;
+          if (!serverToken) {
             // Register this device's session on server if server restarted
             fetch('/api/auth/register-session', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: postHeaders,
               body: JSON.stringify({
                 userId: activeMe.id,
                 phone: activeMe.phone || '',
+                current_session_token: localSessionId,
                 activeSessionId: localSessionId,
+                deviceFingerprint: fp,
               }),
             }).catch(() => {});
-          } else if (data.sessionKilled || (localSessionId && data.activeSessionId !== localSessionId)) {
-            // Extract timestamp from session ID (e.g. sess_1791351705066_xxx or dev_sess_1791351705066_xxx)
-            const remoteTsMatch = String(data.activeSessionId).match(/sess_(\d+)_/);
-            const localTsMatch = String(localSessionId).match(/sess_(\d+)_/);
-            const remoteTs = remoteTsMatch ? Number(remoteTsMatch[1]) : 0;
-            const localTs = localTsMatch ? Number(localTsMatch[1]) : loginTs;
-
-            // Only trigger logout if the server's session ID is genuinely NEWER than our local session
-            if (data.sessionKilled || remoteTs > localTs + 1500) {
-              triggerConcurrentDeviceLogout();
-            } else {
-              // Our local session is newer (e.g. server had an older disk record before our latest login finished syncing)
-              fetch('/api/auth/register-session', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  userId: activeMe.id,
-                  phone: activeMe.phone || '',
-                  activeSessionId: localSessionId,
-                }),
-              }).catch(() => {});
-            }
+          } else if (data.sessionKilled || (localSessionId && serverToken !== localSessionId)) {
+            triggerConcurrentDeviceLogout('تم تسجيل الدخول من جهاز آخر');
           }
         }
       } catch {}
@@ -965,19 +1241,28 @@ export default function App() {
     isLoggingOutRef.current = false;
     const rawUser = (user as any)?.serverUser ? (user as any).serverUser : user;
 
-    // Use server-provided activeSessionId or generate a fresh unique session ID
-    const newSessionId = rawUser.activeSessionId || `sess_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+    // Use server-provided UUID current_session_token or generate a fresh UUID
+    let newSessionId =
+      rawUser.current_session_token ||
+      rawUser.activeSessionId ||
+      getSessionToken() ||
+      (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `sess_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`);
     const nowIso = new Date().toISOString();
-    try {
-      localStorage.setItem('qalb_alam_device_session_id', newSessionId);
-      localStorage.setItem('qalb_alam_session_login_ts', String(Date.now()));
-    } catch {}
+    saveSessionToken(newSessionId);
 
-    const deviceInfo = await getDeviceInfoPayload().catch(() => ({ deviceId: '', deviceName: '' }));
+    const deviceInfo = await getDeviceInfoPayload().catch(() => ({
+      deviceId: '',
+      deviceName: '',
+      fingerprintHash: getStableBrowserFingerprint(),
+    }));
 
     const privileged = ensureUserPrivileges({
       ...rawUser,
+      current_session_token: newSessionId,
       activeSessionId: newSessionId,
+      device_fingerprint: deviceInfo.fingerprintHash || rawUser.device_fingerprint,
       currentDeviceId: rawUser.currentDeviceId || deviceInfo.deviceId,
       currentDeviceName: rawUser.currentDeviceName || deviceInfo.deviceName,
       lastLoginAt: nowIso,
@@ -986,17 +1271,20 @@ export default function App() {
     setCurrentUser(privileged);
     saveCurrentUser(privileged);
 
-    // Sync the new activeSessionId and device binding to server, local users cache, and Firestore immediately
+    // Sync the new current_session_token and device fingerprint binding to server, local cache, and Firestore
     saveSingleUserToServer(privileged).catch(() => {});
+    const regHeaders = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
     const regRes = await fetch('/api/auth/register-session', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: regHeaders,
       body: JSON.stringify({
         userId: privileged.id,
         phone: privileged.phone || '',
+        current_session_token: newSessionId,
         activeSessionId: newSessionId,
         deviceId: deviceInfo.deviceId,
         deviceName: deviceInfo.deviceName,
+        deviceFingerprint: deviceInfo.fingerprintHash,
       }),
     }).catch(() => null);
 
@@ -1005,8 +1293,23 @@ export default function App() {
       setSessionConflictNotice(
         regErr.error || 'عذراً، لقد استنفذت الحد المسموح به لتغيير الجهاز (مرتان شهرياً كحد أقصى لمنع مشاركة الحساب).'
       );
-      handleLogout();
+      performLogout('login');
       return;
+    }
+
+    if (regRes && regRes.ok) {
+      const regData = await regRes.json().catch(() => null);
+      if (regData?.current_session_token && regData.current_session_token !== newSessionId) {
+        newSessionId = regData.current_session_token;
+        saveSessionToken(newSessionId);
+        const synced = {
+          ...privileged,
+          current_session_token: newSessionId,
+          activeSessionId: newSessionId,
+        };
+        setCurrentUser(synced);
+        saveCurrentUser(synced);
+      }
     }
 
     if (privileged.id) {
@@ -1014,7 +1317,9 @@ export default function App() {
         setDoc(
           doc(db, 'users', privileged.id),
           {
+            current_session_token: newSessionId,
             activeSessionId: newSessionId,
+            device_fingerprint: deviceInfo.fingerprintHash || null,
             currentDeviceId: privileged.currentDeviceId || null,
             currentDeviceName: privileged.currentDeviceName || null,
             lastLoginAt: nowIso,
@@ -1062,19 +1367,22 @@ export default function App() {
     }
   };
 
-  const handleLogout = async () => {
+  const performLogout = async (redirectView: AppView = 'home') => {
     isLoggingOutRef.current = true;
     currentUserRef.current = null;
+    clearServerAuthToken();
     try {
-      localStorage.removeItem('qalb_alam_device_session_id');
-      localStorage.removeItem('qalb_alam_current_user');
+      localStorage.removeItem('al_motafalsifa_current_session_token');
+      localStorage.removeItem('al_motafalsifa_device_session_id');
+      localStorage.removeItem('al_motafalsifa_session_login_ts');
+      localStorage.removeItem('al_motafalsifa_current_user');
     } catch {}
     setCurrentUser(null);
     saveCurrentUser(null);
     setSelectedTeacherForView(null);
     setSelectedCourse(null);
     setSelectedCompetition(null);
-    setCurrentView('home');
+    setCurrentView(redirectView);
     window.scrollTo({ top: 0, behavior: 'smooth' });
     try {
       await logoutUser();
@@ -1085,6 +1393,10 @@ export default function App() {
         isLoggingOutRef.current = false;
       }, 600);
     }
+  };
+
+  const handleLogout = () => {
+    void performLogout('home');
   };
 
   const handleOpenAuth = (mode: 'login' | 'signup' | 'parent' = 'login') => {
@@ -1198,6 +1510,29 @@ export default function App() {
     );
   };
 
+  const themeModalNode = (
+    <ThemeCustomizerModal
+      isOpen={isThemeCustomizerOpen}
+      onClose={() => setIsThemeCustomizerOpen(false)}
+      currentTheme={theme}
+      customTheme={customThemeConfig}
+      currentUser={currentUser}
+      onToggleLightDark={toggleTheme}
+      onSetGlobalMode={handleSetGlobalDefaultMode}
+      onApplyCustomTheme={handleApplyGlobalCustomTheme}
+      onResetCustomTheme={handleResetGlobalCustomTheme}
+      onNavigate={(view) => {
+        setCurrentView(view);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }}
+      onOpenVisualEditor={() => {
+        setIsHomeVisualEditorOpen(true);
+        setCurrentView('home');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }}
+    />
+  );
+
   if (currentView === 'login') {
     return (
       <LoginPage
@@ -1207,6 +1542,10 @@ export default function App() {
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }}
         onAuthSuccess={handleAuthSuccess}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        sessionConflictNotice={sessionConflictNotice}
+        onDismissSessionConflict={() => setSessionConflictNotice(null)}
       />
     );
   }
@@ -1219,6 +1558,8 @@ export default function App() {
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }}
         onAuthSuccess={handleAuthSuccess}
+        theme={theme}
+        onToggleTheme={toggleTheme}
       />
     );
   }
@@ -1259,13 +1600,13 @@ export default function App() {
   ) {
     if (!effectiveTeacher) {
       return (
-        <div className="min-h-screen bg-[#060b1e] text-white flex items-center justify-center p-4" dir="rtl">
-          <div className="bg-[#0b132b] border border-blue-500/30 max-w-md w-full p-8 rounded-3xl text-center space-y-4 shadow-2xl">
-            <div className="w-16 h-16 rounded-2xl bg-blue-500/20 text-blue-400 flex items-center justify-center mx-auto">
+        <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex items-center justify-center p-4" dir="rtl">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 max-w-md w-full p-8 rounded-3xl text-center space-y-4 shadow-2xl">
+            <div className="w-16 h-16 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mx-auto">
               <ShieldCheck className="w-8 h-8" />
             </div>
-            <h2 className="text-xl font-black">تسجيل الدخول كمعلم مطلوب</h2>
-            <p className="text-xs text-slate-300 font-medium">
+            <h2 className="text-xl font-black text-slate-900 dark:text-white">تسجيل الدخول كمعلم مطلوب</h2>
+            <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
               هذه الصفحة مخصصة لحسابات المدرسين فقط. يرجى تسجيل الدخول بحساب المعلم أولاً للوصول لصلاحيات إدارة الكورسات والطلاب.
             </p>
             <div className="flex flex-col gap-2 pt-2">
@@ -1274,7 +1615,7 @@ export default function App() {
                   setCurrentView('login');
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
-                className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs transition-colors cursor-pointer"
+                className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs transition-colors cursor-pointer"
               >
                 تسجيل الدخول كمعلم
               </button>
@@ -1283,7 +1624,7 @@ export default function App() {
                   setCurrentView('home');
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
-                className="w-full py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 font-bold text-xs transition-colors cursor-pointer"
+                className="w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs transition-colors cursor-pointer"
               >
                 العودة للرئيسية
               </button>
@@ -1294,7 +1635,7 @@ export default function App() {
     }
 
     return (
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 p-4 sm:p-8 selection:bg-indigo-500/20 text-slate-900 dark:text-slate-100 transition-colors" dir="rtl">
+      <div className="min-h-screen bg-white dark:bg-[#0D0D0F] p-4 sm:p-8 selection:bg-[#E31B23]/15 selection:text-[#E31B23] text-[#151515] dark:text-[#F4F4F5] transition-colors" dir="rtl">
         {currentView === 'teacher_add_course' && (
           <TeacherAddCoursePage
             currentTeacher={effectiveTeacher}
@@ -1345,8 +1686,14 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-slate-50 dark:bg-slate-950 flex flex-col font-sans selection:bg-indigo-500/20 selection:text-indigo-800 text-slate-900 dark:text-slate-100 transition-colors duration-200">
+    <div className="min-h-screen w-full max-w-full overflow-x-clip bg-white dark:bg-[#0D0D0F] flex flex-col font-sans selection:bg-[#E31B23]/15 selection:text-[#E31B23] text-[#151515] dark:text-[#F4F4F5] transition-colors duration-200">
       {/* Realtime Cloud Status Banner (only shown if explicit error) */}
+      {cloudSyncNotice && (
+        <div className="bg-emerald-600 text-white px-4 py-2 text-xs sm:text-sm font-black flex items-center justify-center gap-2 shadow-md">
+          <CheckCircle className="w-4 h-4 shrink-0" />
+          <span>{cloudSyncNotice}</span>
+        </div>
+      )}
       {cloudStatus.status === 'error' ? (
         <div className="bg-amber-600 text-white px-4 py-2.5 text-xs sm:text-sm font-bold flex flex-wrap items-center justify-between gap-3 shadow-md">
           <div className="flex items-center gap-2">
@@ -1357,11 +1704,15 @@ export default function App() {
           </div>
           <div className="flex items-center gap-2">
             <button
+              type="button"
               onClick={async () => {
                 const ok = await forcePushAllToFirebase();
-                if (ok) alert('تمت المزامنة بنجاح مع سحابة Firebase!');
+                if (ok) {
+                  setCloudSyncNotice('تمت المزامنة بنجاح مع سحابة Firebase!');
+                  setTimeout(() => setCloudSyncNotice(null), 3500);
+                }
               }}
-              className="px-3 py-1 bg-white text-amber-900 rounded-lg text-xs font-black hover:bg-amber-100 transition-colors shadow-xs"
+              className="px-3 py-1 bg-white text-amber-900 rounded-lg text-xs font-black hover:bg-amber-100 transition-colors shadow-xs cursor-pointer"
             >
               إعادة محاولة المزامنة بالسحابة 🔄
             </button>
@@ -1379,6 +1730,7 @@ export default function App() {
         theme={theme}
         onToggleTheme={toggleTheme}
         onOpenFlutterApp={() => setIsFlutterAppModalOpen(true)}
+        onOpenThemeCustomizer={isAdminUser ? () => setIsThemeCustomizerOpen(true) : undefined}
       />
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6">
         {/* Fawaterak Payment Result Toast Banner */}
@@ -1618,26 +1970,19 @@ export default function App() {
                 competitions={competitions}
                 students={students}
                 platformSettings={platformSettings}
+                requestedTab={adminRequestedTab}
+                requestedTabNonce={adminTabNonce}
                 onUpdateCourses={handleUpdateCourses}
                 onUpdateCompetitions={handleUpdateCompetitions}
                 onUpdateStudents={handleUpdateStudents}
                 onUpdateSettings={handleUpdateSettings}
                 onOpenAuth={() => handleOpenAuth('login')}
-                onSelectTeacher={(teacher) => {
-                  setSelectedTeacherForView(teacher);
-                  setCurrentView('teacher_dashboard');
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }}
-                onViewTeacherProfile={(teacher) => {
-                  setSelectedTeacherForView(teacher);
-                  setCurrentView('teacher_profile');
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }}
                 onOpenHomeVisualEditor={() => {
                   setIsHomeVisualEditorOpen(true);
                   setCurrentView('home');
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
+                onOpenThemeCustomizer={() => setIsThemeCustomizerOpen(true)}
               />
             )}
             {currentView === 'teacher_dashboard' && (
@@ -1718,25 +2063,151 @@ export default function App() {
           </>
         )}
       </main>
-      <footer className="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 py-8 px-4 sm:px-6 mt-auto transition-colors duration-200">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-xs">
-          <div
-            onClick={() => {
-              setCurrentView('home');
-              window.scrollTo({ top: 0, behavior: 'smooth' });
-            }}
-            className="cursor-pointer transition-opacity hover:opacity-90"
-          >
-            <Logo size="md" subtitle={platformSettings.platformName !== 'منصة قلب العلم التعليمية' && platformSettings.platformName !== 'منصة قلب العلم' ? platformSettings.platformName : 'المنصة التعليمية الحديثة • إشراف إدارة المنصة'} />
+      <footer className="mt-auto border-t border-neutral-200 bg-[#F3F4F6] text-[#151515] transition-colors duration-200 dark:border-neutral-800 dark:bg-[#121216] dark:text-neutral-200 theme-surface">
+        <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 gap-10 md:grid-cols-12">
+            <div className="space-y-4 md:col-span-8">
+              <button
+                type="button"
+                onClick={() => {
+                  setCurrentView('home');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                className="cursor-pointer text-right opacity-100"
+              >
+                <img
+                  src="/assets/aistudio/image_b882b595.png"
+                  alt="منصة المتفلسفة"
+                  className="h-14 sm:h-16 w-auto max-w-full select-none object-contain opacity-100 filter-none brightness-100 saturate-100"
+                />
+              </button>
+              <p className="max-w-lg text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
+                منصة المتفلسفة التعليمية لتقديم مادة الفلسفة والمنطق للصف الأول الثانوي تحت إشراف أ/ سوزان كريم فهمي، بتنظيم واضح يجمع بين فيديوهات الشرح ومذكرات المراجعة والامتحانات التفاعلية ومتابعة ولي الأمر.
+              </p>
+
+              <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
+                <a
+                  href="https://www.facebook.com/profile.php?id=61594492453139"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-neutral-300 bg-white px-3 py-1.5 font-bold text-[#151515] transition-colors hover:border-[#1769D2] hover:text-[#1769D2] dark:border-neutral-700 dark:bg-[#18181D] dark:text-neutral-200 dark:hover:border-[#1769D2]"
+                  title="صفحة فيسبوك المتفلسفة"
+                >
+                  <Facebook className="h-3.5 w-3.5 text-[#1769D2]" />
+                  <span>فيسبوك: المتفلسفة</span>
+                </a>
+                <a
+                  href="https://www.facebook.com/share/g/1KcP6KBSRC/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-neutral-300 bg-white px-3 py-1.5 font-bold text-[#151515] transition-colors hover:border-[#1769D2] hover:text-[#1769D2] dark:border-neutral-700 dark:bg-[#18181D] dark:text-neutral-200 dark:hover:border-[#1769D2]"
+                  title="جروب طلاب المتفلسفة"
+                >
+                  <Facebook className="h-3.5 w-3.5 text-[#1769D2]" />
+                  <span>جروب الطلاب</span>
+                </a>
+                <a
+                  href="https://www.tiktok.com/@almotafalsifa"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-neutral-300 bg-white px-3 py-1.5 font-bold text-[#151515] transition-colors hover:border-[#E31B23] hover:text-[#E31B23] dark:border-neutral-700 dark:bg-[#18181D] dark:text-neutral-200 dark:hover:border-[#E31B23]"
+                  title="تيك توك المتفلسفة"
+                >
+                  <TikTokIcon className="h-3.5 w-3.5" />
+                  <span>تيك توك</span>
+                </a>
+                <a
+                  href="https://wa.me/201040672314"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 font-bold text-emerald-700 transition-colors hover:bg-emerald-600 hover:text-white dark:text-emerald-300"
+                  title="الدعم الفني للمنصة"
+                >
+                  <MessageCircle className="h-3.5 w-3.5" />
+                  <span>الدعم الفني</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (currentUser?.role === 'admin' || currentUser?.email === 'hos098sam@gmail.com') {
+                      setCurrentView('admin');
+                    } else {
+                      handleOpenAuth('login');
+                    }
+                  }}
+                  className="cursor-pointer rounded-xl border border-neutral-300 bg-white p-1.5 text-neutral-500 transition-colors hover:border-[#E31B23] hover:text-[#E31B23] dark:border-neutral-700 dark:bg-[#18181D] dark:text-neutral-400"
+                  title="دخول المشرف / لوحة الكنترول"
+                >
+                  <ShieldCheck className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-3 text-sm md:col-span-4">
+              <p className="font-display font-bold text-[#151515] dark:text-white">أقسام المنصة</p>
+              <div className="flex flex-col items-start gap-2.5 text-neutral-600 dark:text-neutral-400">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCurrentView('home');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                  className="cursor-pointer font-semibold transition-colors hover:text-[#E31B23]"
+                >
+                  الصفحة الرئيسية
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCurrentView('courses');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                  className="cursor-pointer font-semibold transition-colors hover:text-[#E31B23]"
+                >
+                  كافة الكورسات والدروس
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCurrentView('competitions');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                  className="cursor-pointer font-semibold transition-colors hover:text-[#E31B23]"
+                >
+                  المسابقات ولوحة الشرف
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleOpenAuth('signup')}
+                  className="cursor-pointer font-semibold transition-colors hover:text-[#E31B23]"
+                >
+                  إنشاء حساب طالب
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleOpenAuth('login')}
+                  className="cursor-pointer font-semibold transition-colors hover:text-[#E31B23]"
+                >
+                  تسجيل الدخول
+                </button>
+              </div>
+            </div>
           </div>
-          <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
-            <a href="https://www.facebook.com/profile.php?id=61594492453139" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs transition-colors shadow-xs" title="صفحة فيسبوك قلب العلم"><Facebook className="w-3.5 h-3.5 fill-current" /><span>فيسبوك: قلب العلم</span></a>
-            <a href="https://www.facebook.com/share/g/1KcP6KBSRC/" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs transition-colors shadow-xs" title="جروب طلاب قلب العلم"><Facebook className="w-3.5 h-3.5 fill-current" /><span>جروب طلاب قلب العلم</span></a>
-            <a href="https://www.tiktok.com/@qalbalelm" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white font-black text-xs transition-colors shadow-xs" title="تيك توك قلب العلم"><TikTokIcon className="w-3.5 h-3.5" /><span>تيك توك: قلب العلم</span></a>
-            <a href="https://wa.me/201040672314" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs transition-colors shadow-xs" title="الدعم الفني للمنصة"><MessageCircle className="w-3.5 h-3.5" /><span>الدعم الفني للمنصة</span></a>
-            <button onClick={() => { if (currentUser?.role === 'admin') setCurrentView('admin'); else handleOpenAuth('login'); }} className="p-2 rounded-xl text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-slate-800 transition-colors" title="دخول المشرف / لوحة الكنترول"><ShieldCheck className="w-4 h-4" /></button>
+
+          <div className="mt-10 flex flex-col items-start justify-between gap-4 border-t border-neutral-200 pt-6 text-xs text-neutral-500 dark:border-neutral-800 dark:text-neutral-400 sm:flex-row sm:items-center">
+            <p>© {new Date().getFullYear()} منصة المتفلسفة التعليمية. جميع الحقوق محفوظة.</p>
+
+            <button
+              type="button"
+              onClick={() => setIsDeveloperFrameOpen(true)}
+              className="group inline-flex cursor-pointer flex-wrap items-center gap-2 rounded-xl border border-neutral-300 bg-white px-3.5 py-2 text-xs font-bold text-[#151515] transition-colors hover:border-[#E31B23] hover:text-[#E31B23] dark:border-neutral-700 dark:bg-[#18181D] dark:text-neutral-200 dark:hover:border-[#E31B23]"
+            >
+              <span>تطوير حسام احمد</span>
+              <span dir="ltr" className="font-mono text-[11px] text-neutral-500 transition-colors group-hover:text-[#E31B23] dark:text-neutral-400">
+                &lt;Developed by=&quot;HOSSAM_AHMED&quot; /&gt;
+              </span>
+            </button>
           </div>
-          <div className="text-slate-400 dark:text-slate-500 font-medium">جميع الحقوق محفوظة للمنصة التعليمية © 2027</div>
         </div>
       </footer>
       <AuthModal isOpen={isAuthModalOpen} initialMode={authInitialMode} onClose={() => setIsAuthModalOpen(false)} onAuthSuccess={handleAuthSuccess} />
@@ -1748,6 +2219,8 @@ export default function App() {
         currentUser={currentUser}
         platformName={platformSettings.platformName}
         onOpenAdminSupport={() => {
+          setAdminRequestedTab('support_chat');
+          setAdminTabNonce((n) => n + 1);
           setCurrentView('admin');
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }}
@@ -1780,6 +2253,11 @@ export default function App() {
           </div>
         </div>
       )}
+      <DeveloperFrameModal
+        open={isDeveloperFrameOpen}
+        onClose={() => setIsDeveloperFrameOpen(false)}
+      />
+      {isAdminUser && themeModalNode}
     </div>
   );
 }

@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { Course, EssayGradingResult, StudentExamSubmission, User, AppView } from '../types';
 import { getSavedSubmissions, saveSubmissions, saveUsers } from '../data/initialData';
-import { getFirebaseIdToken } from '../auth';
+import { getClientAuthHeaders } from '../utils/authToken';
 import { compressImageFile } from '../utils/imageUtils';
 
 interface TeacherEssayGradingPageProps {
@@ -37,12 +37,16 @@ export const TeacherEssayGradingPage: React.FC<TeacherEssayGradingPageProps> = (
 }) => {
   const myCourses = useMemo(
     () =>
-      allCourses.filter(
-        (c) =>
-          c.instructorId === currentTeacher.id ||
-          c.instructor === currentTeacher.name ||
-          c.teacherName === currentTeacher.name
-      ),
+      currentTeacher.email?.toLowerCase() === 'almtflsft@gmail.com' ||
+      currentTeacher.role === 'admin' ||
+      !currentTeacher.isAssistant
+        ? allCourses
+        : allCourses.filter(
+            (c) =>
+              c.instructorId === currentTeacher.id ||
+              c.instructor === currentTeacher.name ||
+              c.teacherName === currentTeacher.name
+          ),
     [allCourses, currentTeacher]
   );
 
@@ -80,7 +84,7 @@ export const TeacherEssayGradingPage: React.FC<TeacherEssayGradingPageProps> = (
   const getStudentName = (sub: StudentExamSubmission) =>
     sub.studentName ||
     allStudents.find((s) => s.id === sub.studentId)?.name ||
-    'طالب منصة قلب العلم';
+    'طالب منصة المتفلسفة ';
 
   const getCourseTitle = (sub: StudentExamSubmission) =>
     myCourses.find((c) => c.id === sub.courseId)?.title || 'كورس تعليمي';
@@ -192,13 +196,10 @@ export const TeacherEssayGradingPage: React.FC<TeacherEssayGradingPageProps> = (
 
       // Sync to backend if token available
       try {
-        const token = await getFirebaseIdToken();
+        const gradeHeaders = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
         await fetch('/api/teacher/grade-essay', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
+          headers: gradeHeaders,
           body: JSON.stringify({
             submissionId: activeSubmission.submissionId,
             courseId: activeSubmission.courseId,

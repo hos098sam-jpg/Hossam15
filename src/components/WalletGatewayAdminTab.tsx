@@ -31,6 +31,7 @@ import {
   ChevronUp,
 } from 'lucide-react';
 import { Coupon, Course, User, WalletOrder } from '../types';
+import { getClientAuthHeaders } from '../utils/authToken';
 
 interface WalletGatewayAdminTabProps {
   courses: Course[];
@@ -71,12 +72,12 @@ export const WalletGatewayAdminTab: React.FC<WalletGatewayAdminTabProps> = ({
   // Gateway Config State
   const [config, setConfig] = useState<GatewayConfig>({
     receivingWalletNumber: '01040672314',
-    receivingWalletName: 'فودافون كاش - منصة قلب العلم التعليمية',
-    webhookUrl: 'https://qalbalelm.web.app/api/gateway/sms-webhook',
-    webhookSecret: 'alelm_sms_secure_2027',
+    receivingWalletName: 'فودافون كاش - منصة المتفلسفة التعليمية',
+    webhookUrl: 'https://motafalsifa.vercel.app/api/gateway/sms-webhook',
+    webhookSecret: '',
   });
   const [walletInput, setWalletInput] = useState('01040672314');
-  const [secretInput, setSecretInput] = useState('alelm_sms_secure_2027');
+  const [secretInput, setSecretInput] = useState('');
   const [isSavingConfig, setIsSavingConfig] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
 
@@ -108,7 +109,8 @@ export const WalletGatewayAdminTab: React.FC<WalletGatewayAdminTabProps> = ({
   const fetchGatewayData = async () => {
     setLoadingOrders(true);
     try {
-      const res = await fetch('/api/gateway/orders');
+      const headers = await getClientAuthHeaders();
+      const res = await fetch('/api/gateway/orders', { headers });
       if (res.ok) {
         const data = await res.json();
         setOrders(data.orders || []);
@@ -133,7 +135,8 @@ export const WalletGatewayAdminTab: React.FC<WalletGatewayAdminTabProps> = ({
   const fetchCoupons = async () => {
     setLoadingCoupons(true);
     try {
-      const res = await fetch('/api/coupons');
+      const headers = await getClientAuthHeaders();
+      const res = await fetch('/api/coupons', { headers });
       if (res.ok) {
         const data = await res.json();
         setCoupons(data.coupons || []);
@@ -163,12 +166,13 @@ export const WalletGatewayAdminTab: React.FC<WalletGatewayAdminTabProps> = ({
     e.preventDefault();
     setIsSavingConfig(true);
     try {
+      const headers = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
       const res = await fetch('/api/gateway/config', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           receivingWalletNumber: walletInput.trim(),
-          webhookSecret: secretInput.trim(),
+          ...(secretInput.trim() ? { webhookSecret: secretInput.trim() } : {}),
         }),
       });
       const data = await res.json();
@@ -195,9 +199,10 @@ export const WalletGatewayAdminTab: React.FC<WalletGatewayAdminTabProps> = ({
   // Admin manually approve order (1-click instant activation)
   const handleApproveOrder = async (orderId: string) => {
     try {
+      const headers = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
       const res = await fetch(`/api/gateway/orders/${orderId}/approve`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ reviewedBy: 'الإدارة' }),
       });
       const data = await res.json();
@@ -216,9 +221,10 @@ export const WalletGatewayAdminTab: React.FC<WalletGatewayAdminTabProps> = ({
   // Admin manually reject order (1-click rejection)
   const handleRejectOrder = async (orderId: string) => {
     try {
+      const headers = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
       const res = await fetch(`/api/gateway/orders/${orderId}/reject`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ reason: 'لم يتم التحقق من صحة إيصال التحويل المرفق' }),
       });
       const data = await res.json();
@@ -240,9 +246,10 @@ export const WalletGatewayAdminTab: React.FC<WalletGatewayAdminTabProps> = ({
     setSimRunning(true);
     setSimResult(null);
     try {
+      const headers = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
       const res = await fetch('/api/gateway/simulate-sms', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           sender: simSender,
           message: simMessage,
@@ -280,9 +287,10 @@ export const WalletGatewayAdminTab: React.FC<WalletGatewayAdminTabProps> = ({
     e.preventDefault();
     if (!newCouponCode.trim()) return;
     try {
+      const headers = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
       const res = await fetch('/api/coupons', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           code: newCouponCode.trim().toUpperCase(),
           discountType: newDiscountType,
@@ -309,7 +317,8 @@ export const WalletGatewayAdminTab: React.FC<WalletGatewayAdminTabProps> = ({
   const handleDeleteCoupon = async (code: string) => {
     if (!confirm(`هل أنت متأكد من حذف كود الخصم ${code}؟`)) return;
     try {
-      const res = await fetch(`/api/coupons/${code}`, { method: 'DELETE' });
+      const headers = await getClientAuthHeaders();
+      const res = await fetch(`/api/coupons/${code}`, { method: 'DELETE', headers });
       if (res.ok) {
         setToast({ text: 'تم حذف كود الخصم بنجاح.', type: 'success' });
         fetchCoupons();
@@ -1019,7 +1028,7 @@ export const WalletGatewayAdminTab: React.FC<WalletGatewayAdminTabProps> = ({
                   type={showSecret ? 'text' : 'password'}
                   value={secretInput}
                   onChange={(e) => setSecretInput(e.target.value)}
-                  placeholder="alelm_sms_secure_2027"
+                  placeholder="أدخل مفتاح Webhook السري الجديد (اختياري)"
                   dir="ltr"
                   className="w-full px-4 py-3 rounded-2xl border border-slate-200 text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 text-right bg-slate-50"
                 />
@@ -1065,12 +1074,12 @@ export const WalletGatewayAdminTab: React.FC<WalletGatewayAdminTabProps> = ({
                 </span>
                 <div className="flex items-center justify-between gap-2 p-3 rounded-xl bg-slate-950 border border-slate-800">
                   <span className="font-mono text-xs text-emerald-400 truncate select-all" dir="ltr">
-                    https://qalbalelm.web.app/api/gateway/sms-webhook
+                    https://motafalsifa.vercel.app/api/gateway/sms-webhook
                   </span>
                   <button
                     type="button"
                     onClick={() =>
-                      copyToClipboard('https://qalbalelm.web.app/api/gateway/sms-webhook', 'webhook')
+                      copyToClipboard('https://motafalsifa.vercel.app/api/gateway/sms-webhook', 'webhook')
                     }
                     className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black shrink-0 transition-all flex items-center gap-1 cursor-pointer"
                   >

@@ -1,9 +1,30 @@
-node_modules/
-build/
-dist/
-coverage/
-.DS_Store
-*.log
-whatsapp_session_auth/
-.env*
+# Dependencies & Build
+/node_modules/
+/dist/
+/build/
+/.vite/
+
+# Environment & Secrets (NEVER commit)
+/.env
+/.env.*
 !.env.example
+*.pem
+*.key
+.secret_*
+
+# Runtime Local Databases & Session Artifacts
+/data/
+/auth_info_baileys/
+*.sqlite
+*.db
+
+# Logs & OS Artifacts
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+/.aistudio/
+/qalbalelm-hosting-bundle.tar.gz
+/seed_data.js
+/seed_data.cjs
+/seed_data.mjs

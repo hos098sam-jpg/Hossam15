@@ -1,12 +1,14 @@
 /**
  * VCDN Client Uploader & Ultra-Fast Parallel Binary Chunked Engine
- * Domain: qalbalelm.web.app
+ * Domain: motafalsifa.vercel.app
  * Features:
  * - Zero-copy Raw Binary Blob Upload (eliminates Base64 33% bloat & JSON serialization overhead)
  * - Dual-Engine High-Throughput Upload: Races direct CDN edge & local server with 6 concurrent channels
  * - Resumable with automatic chunk-level checkpointing (never restarts from 0% on large 500MB+ files)
  * - Live Progress callback (percentage, parts, real-time Mbps speed, ETA)
  */
+
+import { getClientAuthHeaders, getClientAuthToken } from './authToken';
 
 export interface VcdnUploadProgress {
   percentage: number;
@@ -25,8 +27,6 @@ export interface VcdnUploadResult {
   status: 'uploading' | 'processing' | 'ready' | 'failed';
   title: string;
   remoteAuthError?: boolean;
-  embedUrl?: string;
-  hlsUrl?: string;
   message?: string;
 }
 
@@ -84,10 +84,14 @@ function uploadChunkWithProgress(params: {
         contentType = 'application/json';
       }
 
+      const authToken = await getClientAuthToken().catch(() => null);
       const xhr = new XMLHttpRequest();
       const targetUrl = `${params.url}?sessionId=${encodeURIComponent(params.sessionId)}&partNumber=${params.partNumber}`;
       xhr.open('POST', targetUrl, true);
       xhr.setRequestHeader('Content-Type', contentType);
+      if (authToken) {
+        xhr.setRequestHeader('Authorization', `Bearer ${authToken}`);
+      }
       xhr.setRequestHeader('x-session-id', params.sessionId);
       xhr.setRequestHeader('x-part-number', String(params.partNumber));
 
@@ -171,7 +175,7 @@ export async function uploadVideoToVcdn(
 
   const presignRes = await fetch('/api/vcdn/upload/presign', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await getClientAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({
       title,
       fileName,
@@ -336,7 +340,7 @@ export async function uploadVideoToVcdn(
 
   const finalizeRes = await fetch('/api/vcdn/upload/finalize', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await getClientAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ sessionId }),
     signal: abortSignal,
   });
@@ -380,7 +384,9 @@ export async function fetchVcdnVideoStatus(videoId: string): Promise<{
   hlsUrl?: string;
 }> {
   try {
-    const res = await fetch(`/api/vcdn/videos/${encodeURIComponent(videoId)}/status`);
+    const res = await fetch(`/api/vcdn/videos/${encodeURIComponent(videoId)}/status`, {
+      headers: await getClientAuthHeaders(),
+    });
     if (!res.ok) throw new Error('فشل جلب حالة الفيديو');
     const data = await res.json();
     return data.video || { status: 'ready' };
@@ -405,7 +411,7 @@ export async function getVcdnPlaybackToken(params: {
 }> {
   const res = await fetch(`/api/vcdn/videos/${encodeURIComponent(params.videoId)}/playback-token`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await getClientAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({
       studentId: params.studentId,
       studentName: params.studentName,

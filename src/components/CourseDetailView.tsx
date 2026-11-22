@@ -21,7 +21,6 @@ import {
   Check,
   Video,
   ExternalLink,
-  Radio as RadioReceiver,
   Download,
   Eye,
   X,
@@ -46,12 +45,16 @@ import {
   Copy,
   Smartphone,
   Send,
+  Radio,
 } from 'lucide-react';
 import { Course, CourseExam, User, CourseAccessCode, CourseLesson, LessonVideo, LessonPdf, WalletOrder, WalletTransaction } from '../types';
 import { ExamTakeView } from './ExamTakeView';
 import { SecureVideoPlayer } from './SecureVideoPlayer';
 import { CertificateModal } from './CertificateModal';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../firebase';
 import { createGatewayVideoPayload } from '../utils/mediaUtils';
+import { getClientAuthHeaders } from '../utils/authToken';
 import { getVideoProgress, clearVideoProgress, formatSecondsToTime } from '../utils/videoProgress';
 import {
   getSavedAccessCodes,
@@ -64,7 +67,6 @@ import {
   getStudentEnrolledCourses,
   redeemStudentWalletCode
 } from '../data/initialData';
-import { enrollStudentInCourseInFirestore } from '../auth';
 import {
   getCompletedVideos,
   isVideoCompleted,
@@ -224,8 +226,10 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
         const q = new URLSearchParams();
         if (currentUser?.id) q.set('studentId', currentUser.id);
         if (currentUser?.phone) q.set('studentPhone', currentUser.phone);
-        const res = await fetch(`/api/courses/${encodeURIComponent(course.id)}/enrollment-status?${q.toString()}`);
-        if (!res.ok || cancelled) return;
+        const headers = await getClientAuthHeaders();
+        const res = await fetch(`/api/courses/${encodeURIComponent(course.id)}/enrollment-status?${q.toString()}`, { headers });
+        const ct = res.headers.get("content-type") || "";
+        if (!res.ok || !ct.includes("application/json") || cancelled) return;
         const data = await res.json();
         if (cancelled) return;
         if (typeof data.authoritativePrice === 'number' && data.authoritativePrice >= 0) {
@@ -279,9 +283,10 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
     }
     setCouponLoading(true);
     try {
+      const headers = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
       const res = await fetch('/api/courses/subscribe-db', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           method: 'coupon_100',
           courseId: course.id,
@@ -308,7 +313,6 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
 
       saveCurrentUser(updatedUser);
       saveStudentEnrolledCourse(currentUser.id, course.id);
-      enrollStudentInCourseInFirestore(currentUser.id, course.id).catch(() => {});
 
       const allUsers = getSavedUsers();
       if (allUsers.some((u) => u.id === currentUser.id)) {
@@ -338,9 +342,10 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
 
     const timer = setTimeout(async () => {
       try {
+        const couponHeaders = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
         const res = await fetch('/api/coupons/validate', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: couponHeaders,
           body: JSON.stringify({
             code: cleanCode,
             originalPrice: courseBasePrice,
@@ -423,9 +428,10 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
     setIsPayingWithWallet(true);
     setRechargeFeedback(null);
     try {
+      const headers = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
       const res = await fetch('/api/courses/subscribe-db', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           method: 'wallet_balance',
           courseId: course.id,
@@ -468,7 +474,6 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
       saveCurrentUser(updatedUser);
       saveStudentEnrolledCourse(currentUser.id, course.id);
       await saveSingleUserToServer(updatedUser).catch(() => {});
-      await enrollStudentInCourseInFirestore(currentUser.id, course.id).catch(() => {});
 
       const allUsers = getSavedUsers();
       if (allUsers.some((u) => u.id === currentUser.id)) {
@@ -494,7 +499,8 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
 
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`/api/gateway/order-status/${activePendingOrder.id}`);
+        const orderHeaders = await getClientAuthHeaders();
+        const res = await fetch(`/api/gateway/order-status/${activePendingOrder.id}`, { headers: orderHeaders });
         if (res.ok) {
           const data = await res.json();
           if (data.isCompleted) {
@@ -506,7 +512,6 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
               };
               saveCurrentUser(updated);
               saveStudentEnrolledCourse(currentUser.id, course.id);
-              enrollStudentInCourseInFirestore(currentUser.id, course.id).catch(() => {});
               onUpdateUser?.(updated);
             }
             setActivePendingOrder(null);
@@ -529,9 +534,10 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
     }
     setCouponLoading(true);
     try {
+      const couponHeaders = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
       const res = await fetch('/api/coupons/validate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: couponHeaders,
         body: JSON.stringify({ code: cleanCode, originalPrice: courseBasePrice, courseId: course.id }),
       });
       const data = await res.json();
@@ -604,25 +610,61 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
     setWalletSuccess(null);
 
     try {
+      const orderPayload = {
+        studentId: currentUser.id,
+        studentName: currentUser.name,
+        studentPhone: currentUser.phone || "",
+        senderPhone: senderWalletPhone.trim(),
+        transactionId: transactionRefId.trim() || "",
+        courseId: course.id,
+        courseTitle: course.title,
+        coursePrice: courseBasePrice,
+        couponCode: appliedCoupon?.code || "",
+        paymentMethod: isInstaPay ? "instapay" : "vodafone_cash",
+        receiptImageUrl: receiptImageUrl || "",
+      };
+      const orderHeaders = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
       const res = await fetch('/api/gateway/create-order', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        headers: orderHeaders,
+        body: JSON.stringify(orderPayload),
+      }).catch(() => null);
+
+      const ct = res?.headers.get("content-type") || "";
+      let data: any = null;
+      if (res && ct.includes("application/json")) {
+        data = await res.json();
+      } else {
+        const orderId = `ord_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+        const pendingOrder: WalletOrder = {
+          id: orderId,
           studentId: currentUser.id,
           studentName: currentUser.name,
-          studentPhone: currentUser.phone,
+          studentPhone: currentUser.phone || "",
           senderPhone: senderWalletPhone.trim(),
+          targetWallet: effectiveReceivingWallet,
           transactionId: transactionRefId.trim() || undefined,
           courseId: course.id,
           courseTitle: course.title,
-          coursePrice: courseBasePrice,
-          couponCode: appliedCoupon?.code,
-          paymentMethod: isInstaPay ? 'instapay' : 'vodafone_cash',
-          receiptImageUrl: receiptImageUrl || undefined,
-        }),
-      });
-
-      const data = await res.json();
+          originalPrice: courseBasePrice,
+          discountAmount: currentDiscountAmount,
+          finalAmount: finalPayableAmount,
+          paymentMethod: isInstaPay ? "instapay" : "vodafone_cash",
+          status: "Pending",
+          createdAt: new Date().toISOString(),
+        };
+        await setDoc(doc(db, "orders", orderId), {
+          ...pendingOrder,
+          updatedAt: serverTimestamp(),
+        });
+        setActivePendingOrder(pendingOrder);
+        setWalletSuccess(
+          isInstaPay
+            ? "تم تسجيل طلب التحويل عبر إنستا باي بنجاح! سيتم مراجعته وتفعيل الكورس فور التأكيد من الإدارة."
+            : "تم إرسال طلب التحويل بنجاح! سيتم مراجعة الإيصال وتفعيل الكورس في حسابك فور التأكيد."
+        );
+        return;
+      }
 
       if (!res.ok) {
         throw new Error(data.error || 'حدث خطأ أثناء إرسال طلب التحويل.');
@@ -637,7 +679,6 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
         };
         saveCurrentUser(updatedUser);
         saveStudentEnrolledCourse(currentUser.id, course.id);
-        enrollStudentInCourseInFirestore(currentUser.id, course.id).catch(() => {});
         onUpdateUser?.(updatedUser);
         setLocalEnrolled(true);
         setWalletSuccess(data.message || '🎉 تم التحقق الفوري من التحويل وتفعيل الكورس في حسابك بنجاح!');
@@ -700,8 +741,8 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
     const handleVideoCompletedEvent = () => {
       setCompletedVideosMap(getCompletedVideos(currentUser?.id));
     };
-    window.addEventListener('qalb_alam_video_completed', handleVideoCompletedEvent);
-    return () => window.removeEventListener('qalb_alam_video_completed', handleVideoCompletedEvent);
+    window.addEventListener('al_motafalsifa_video_completed', handleVideoCompletedEvent);
+    return () => window.removeEventListener('al_motafalsifa_video_completed', handleVideoCompletedEvent);
   }, [currentUser?.id]);
 
   // Auto-dismiss lock notice after 5 seconds
@@ -839,9 +880,10 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
 
     try {
       const localKnownCodes = getSavedAccessCodes();
+      const cardHeaders = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
       const res = await fetch('/api/courses/subscribe-db', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: cardHeaders,
         body: JSON.stringify({
           method: 'purchase_card',
           courseId: course.id,
@@ -875,7 +917,6 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
 
       saveCurrentUser(updatedUser);
       saveStudentEnrolledCourse(currentUser.id, course.id);
-      enrollStudentInCourseInFirestore(currentUser.id, course.id).catch(() => {});
 
       const allUsers = getSavedUsers();
       const updatedUsers = allUsers.map((u) => (u.id === updatedUser.id ? updatedUser : u));
@@ -896,9 +937,10 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
     }
     setIsEnrollingFree(true);
     try {
+      const freeHeaders = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
       const res = await fetch('/api/courses/subscribe-db', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: freeHeaders,
         body: JSON.stringify({
           method: 'coupon_100',
           courseId: course.id,
@@ -926,7 +968,6 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
 
       saveCurrentUser(updatedUser);
       saveStudentEnrolledCourse(currentUser.id, course.id);
-      await enrollStudentInCourseInFirestore(currentUser.id, course.id).catch(() => {});
 
       const allUsers = getSavedUsers();
       const updatedUsers = allUsers.map((u) => (u.id === updatedUser.id ? updatedUser : u));
@@ -1011,7 +1052,7 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
               غير مصرح للمعلم بفتح أو تعديل كورسات معلم آخر
             </h2>
             <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed max-w-lg mx-auto">
-              وفقاً لسياسة منصة قلب العلم وصلاحيات المدرسين، يمكنك فقط فتح وتعديل ومتابعة الكورسات الخاصة بك، وإضافة الدروس ومتابعة طلابك المشتركين وتصحيح الأسئلة المقالية لكورساتك فقط.
+              وفقاً لسياسة منصة المتفلسفة  وصلاحيات المدرسين، يمكنك فقط فتح وتعديل ومتابعة الكورسات الخاصة بك، وإضافة الدروس ومتابعة طلابك المشتركين وتصحيح الأسئلة المقالية لكورساتك فقط.
             </p>
           </div>
 
@@ -1742,7 +1783,7 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
                       <div className="p-4 rounded-2xl bg-amber-950/30 border border-amber-500/40 space-y-2 animate-pulse">
                         <div className="flex items-center justify-between text-xs font-black text-amber-300">
                           <span className="flex items-center gap-2">
-                            <RadioReceiver className="w-4 h-4 text-amber-400 animate-spin" />
+                            <Radio className="w-4 h-4 text-amber-400 animate-spin" />
                             <span>جاري التحقق من التحويل في قاعدة البيانات وتفعيل الكورس...</span>
                           </span>
                           <span className="font-mono text-[10px] bg-amber-500/20 px-2 py-0.5 rounded">
@@ -1808,7 +1849,7 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
                         type="text"
                         value={enteredCode}
                         onChange={(e) => setEnteredCode(e.target.value.toUpperCase())}
-                        placeholder="أدخل كود كارت شراء الكورس هنا (مثال: QALB-PHYS-9821)"
+                        placeholder="أدخل كود كارت شراء الكورس هنا (مثال: MTAF-PHIL-9821)"
                         className="w-full pl-4 pr-11 py-3.5 rounded-2xl border-2 border-amber-400/60 bg-slate-900 text-white placeholder-slate-500 text-xs sm:text-sm font-black font-mono tracking-wider focus:outline-none focus:ring-2 focus:ring-amber-400 text-center"
                       />
                       <Key className="w-5 h-5 text-amber-400 absolute right-3.5 top-3.5 pointer-events-none" />
@@ -1958,7 +1999,7 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
 
               <div className="flex items-center justify-center gap-2 text-[11px] text-slate-400 pt-1">
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                <span>نظام دفع واشتراك مؤمّن بالكامل عبر قاعدة بيانات منصة قلب العلم (حماية ضد التلاعب بالأسعار)</span>
+                <span>نظام دفع واشتراك مؤمّن بالكامل عبر قاعدة بيانات منصة المتفلسفة  (حماية ضد التلاعب بالأسعار)</span>
               </div>
             </div>
           )}
@@ -3189,7 +3230,7 @@ export const CourseDetailView: React.FC<CourseDetailViewProps> = ({
         studentGrade={currentUser?.grade || course.schoolYear}
         courseTitle={course.title}
         scorePercentage={Math.max(courseOverallProgress, 95)}
-        instructorName={course.instructor || 'د. حسام شحاته'}
+        instructorName={course.instructor || 'أ/ سوزان كريم فهمي'}
       />
     </div>
   );

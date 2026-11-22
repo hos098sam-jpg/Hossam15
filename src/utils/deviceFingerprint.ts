@@ -27,9 +27,9 @@ function getCanvasFingerprint(): string {
     ctx.fillStyle = '#f60';
     ctx.fillRect(125, 1, 62, 20);
     ctx.fillStyle = '#069';
-    ctx.fillText('QalbAlElm,🔒2026', 2, 15);
+    ctx.fillText('AlMotafalsifa,🔒2027', 2, 15);
     ctx.fillStyle = 'rgba(102, 204, 0, 0.7)';
-    ctx.fillText('QalbAlElm,🔒2026', 4, 17);
+    ctx.fillText('AlMotafalsifa,🔒2027', 4, 17);
 
     return hashString(canvas.toDataURL());
   } catch {
@@ -78,7 +78,7 @@ export function getDeviceName(): string {
   return `${os} - ${browser}`;
 }
 
-const DEVICE_STORAGE_KEY = 'qalb_alelm_hardware_device_id';
+const DEVICE_STORAGE_KEY = 'al_motafalsifa_hardware_device_id';
 
 // Read device ID from document.cookie
 function getCookieDeviceId(): string | null {
@@ -147,13 +147,36 @@ export async function getOrCreateDeviceId(): Promise<string> {
   return newDeviceId;
 }
 
+let cachedBrowserFingerprint: string | null = null;
+
+/**
+ * Generates a deterministic browser + hardware fingerprint hash (stable across reloads in the same browser)
+ */
+export function getStableBrowserFingerprint(): string {
+  if (typeof window === 'undefined') return 'server_fp';
+  if (cachedBrowserFingerprint) return cachedBrowserFingerprint;
+
+  const screenPart = `${window.screen?.width || 0}x${window.screen?.height || 0}x${window.screen?.colorDepth || 0}`;
+  const tz = Intl?.DateTimeFormat ? Intl.DateTimeFormat().resolvedOptions().timeZone || '' : '';
+  const lang = navigator.language || '';
+  const platform = (navigator as any).platform || '';
+  const hardwareConcurrency = navigator.hardwareConcurrency || 2;
+  const maxTouchPoints = navigator.maxTouchPoints || 0;
+  const ua = (navigator.userAgent || '').slice(0, 120);
+  const canvasHash = getCanvasFingerprint();
+  const rawSignature = `${screenPart}|${tz}|${lang}|${platform}|${hardwareConcurrency}|${maxTouchPoints}|${ua}|${canvasHash}`;
+  cachedBrowserFingerprint = `fp_${hashString(rawSignature)}_${canvasHash}`;
+  return cachedBrowserFingerprint;
+}
+
 /**
  * Returns complete device payload for authentication requests
  */
-export async function getDeviceInfoPayload(): Promise<{ deviceId: string; deviceName: string; fingerprintHash?: string }> {
+export async function getDeviceInfoPayload(): Promise<{ deviceId: string; deviceName: string; fingerprintHash: string }> {
   const deviceId = await getOrCreateDeviceId();
   const deviceName = getDeviceName();
-  const canvasHash = getCanvasFingerprint();
-  return { deviceId, deviceName, fingerprintHash: canvasHash };
+  const fingerprintHash = getStableBrowserFingerprint();
+  return { deviceId, deviceName, fingerprintHash };
 }
+
 

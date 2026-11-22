@@ -34,6 +34,7 @@ import {
 } from '../types';
 import { SAMPLE_BOOKS } from '../data/sampleBooks';
 import { getSavedSubmissions, saveSubmissions, saveExamToStore } from '../data/initialData';
+import { getClientAuthHeaders } from '../utils/authToken';
 
 interface BookExamsHubProps {
   branch: BacBranch;
@@ -154,9 +155,10 @@ export const BookExamsHub: React.FC<BookExamsHubProps> = ({ branch }) => {
         throw new Error('الرجاء رفع ملف PDF للكتاب أو اختيار نموذج جاهز أو كتابة نص الدرس.');
       }
 
+      const analyzeHeaders = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
       const response = await fetch('/api/analyze-book', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: analyzeHeaders,
         body: JSON.stringify(payload),
       });
 
@@ -199,9 +201,10 @@ export const BookExamsHub: React.FC<BookExamsHubProps> = ({ branch }) => {
     setEssayAnswers({});
 
     try {
+      const genHeaders = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
       const response = await fetch('/api/generate-book-exams', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: genHeaders,
         body: JSON.stringify({
           lessonTitle: lesson.title,
           lessonConcepts: lesson.keyConcepts,

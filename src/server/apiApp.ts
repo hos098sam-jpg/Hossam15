@@ -87,6 +87,92 @@ export function ensureDataDir() {
   } catch (e) {}
 }
 
+const serverSecretsCache = new Map<string, string>();
+export function getOrCreateServerSecret(name: string, envVar?: string): string {
+  if (envVar && process.env[envVar] && String(process.env[envVar]).trim().length >= 16) {
+    return String(process.env[envVar]).trim();
+  }
+  const cached = serverSecretsCache.get(name);
+  if (cached) return cached;
+  ensureDataDir();
+  const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "_");
+  const secretPath = path.join(DATA_DIR, `.secret_${safeName}`);
+  try {
+    if (fs.existsSync(secretPath)) {
+      const val = fs.readFileSync(secretPath, "utf8").trim();
+      if (val.length >= 32) {
+        serverSecretsCache.set(name, val);
+        return val;
+      }
+    }
+  } catch {}
+  const generated = crypto.randomBytes(32).toString("hex");
+  try {
+    fs.writeFileSync(secretPath, generated, { mode: 0o600, encoding: "utf8" });
+  } catch {}
+  serverSecretsCache.set(name, generated);
+  return generated;
+}
+
+export function hashPasswordScrypt(password: string): string {
+  const clean = String(password || "").trim();
+  const salt = crypto.randomBytes(16).toString("hex");
+  const derived = crypto.scryptSync(clean, salt, 64).toString("hex");
+  return `scrypt$${salt}$${derived}`;
+}
+
+export function verifyPasswordScrypt(password: string, stored: string): boolean {
+  const clean = String(password || "").trim();
+  const s = String(stored || "").trim();
+  if (!clean || !s) return false;
+  if (s.startsWith("scrypt$")) {
+    const parts = s.split("$");
+    if (parts.length !== 3) return false;
+    try {
+      const derived = crypto.scryptSync(clean, parts[1], 64);
+      const expected = Buffer.from(parts[2], "hex");
+      return derived.length === expected.length && crypto.timingSafeEqual(derived, expected);
+    } catch {
+      return false;
+    }
+  }
+  // Legacy plaintext compatibility with timing-safe comparison
+  const a = Buffer.from(clean, "utf8");
+  const b = Buffer.from(s, "utf8");
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+export function isForeignQalbUser(u: any): boolean {
+  if (!u || typeof u !== "object") return true;
+  const plat = String(u.platform || "").trim().toLowerCase();
+  if (plat && plat !== "al_motafalsifa") return true;
+  const em = String(u.email || "").trim().toLowerCase();
+  if (em === "4879@qalb-alam.edu") return true;
+  if (/@qalb-?al(am|elm)\.edu$/i.test(em)) return true;
+  if (u.id === "teacher-ahmed-chemistry") return true;
+  return false;
+}
+
+export function isBelongingToMotafalsifa(u: any, knownIds?: Set<string>): boolean {
+  if (!u || !u.id || isForeignQalbUser(u)) return false;
+  const plat = String(u.platform || "").trim().toLowerCase();
+  if (plat === "al_motafalsifa") return true;
+  const em = String(u.email || "").trim().toLowerCase();
+  if (em === "hos098sam@gmail.com" || em === "almtflsft@gmail.com" || u.id === "admin-hosam-supervisor" || u.id === "admin_hos098sam") return true;
+  if (em.endsWith("@al-motafalsifa.edu") || em.endsWith("@al-motafalsifa.internal")) return true;
+  if (knownIds && knownIds.has(String(u.id))) return true;
+  return false;
+}
+
+export function escapeHtmlAttr(str: any): string {
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 export const DEMO_USER_IDS = [
   'teacher-ahmed-chemistry',
   'teacher-default',
@@ -128,7 +214,7 @@ export function initFirebaseAdmin() {
       const parsedKey = JSON.parse(serviceAccountKey);
       adminApp = initAdminApp({
         credential: cert(parsedKey),
-        projectId: parsedKey.project_id || "qalbalelm",
+        projectId: parsedKey.project_id || "alesraa-academy",
       });
       adminHasValidServiceAccount = true;
       console.log("✅ [Firebase Admin] Successfully initialized with service account credentials.");
@@ -142,7 +228,7 @@ export function initFirebaseAdmin() {
   // (Do NOT use applicationDefault() in Cloud Run to prevent gRPC 7 PERMISSION_DENIED errors)
   try {
     adminApp = initAdminApp({
-      projectId: process.env.VITE_FIREBASE_PROJECT_ID || "qalbalelm",
+      projectId: process.env.VITE_FIREBASE_PROJECT_ID || "alesraa-academy",
     });
     adminHasValidServiceAccount = false;
     return adminApp;
@@ -167,8 +253,8 @@ export function getSafeFirestore() {
 // ----------------------------------------------------------------------------
 // Firestore REST API fallback (Uses Web API Key for reliable document reads)
 // ----------------------------------------------------------------------------
-const FIREBASE_API_KEY = process.env.VITE_FIREBASE_API_KEY || "AIzaSyAn6z4sDy1_sF-YmkLjA0Z1TQwU_iLClf4";
-const FIREBASE_PROJECT_ID = process.env.VITE_FIREBASE_PROJECT_ID || "qalbalelm";
+const FIREBASE_API_KEY = process.env.VITE_FIREBASE_API_KEY || "AIzaSyDdwnLfJbsQ8hbXP-CzocjaejmvYC4FOh4";
+const FIREBASE_PROJECT_ID = process.env.VITE_FIREBASE_PROJECT_ID || "alesraa-academy";
 
 export function unwrapFirestoreValue(val: any): any {
   if (!val) return null;
@@ -221,7 +307,7 @@ export async function syncToFirestoreRest(docName: string, data: any, idToken?: 
         const totalChunks = chunks.length;
         const nowIso = new Date().toISOString();
         for (let idx = 0; idx < chunks.length; idx++) {
-          await safeDb.collection("qalbalelm_data").doc(`users_chunk_${idx + 1}`).set({
+          await safeDb.collection("al_motafalsifa_data").doc(`users_chunk_${idx + 1}`).set({
             chunkIndex: idx + 1,
             totalChunks,
             count: chunks[idx].length,
@@ -229,7 +315,7 @@ export async function syncToFirestoreRest(docName: string, data: any, idToken?: 
             updatedAt: nowIso,
           }).catch(() => {});
         }
-        await safeDb.collection("qalbalelm_data").doc("users").set({
+        await safeDb.collection("al_motafalsifa_data").doc("users").set({
           isSharded: true,
           maxPerChunk: MAX_USERS_PER_FIRESTORE_CHUNK,
           totalChunks,
@@ -241,7 +327,7 @@ export async function syncToFirestoreRest(docName: string, data: any, idToken?: 
         return true;
       }
 
-      await safeDb.collection("qalbalelm_data").doc(docName).set({
+      await safeDb.collection("al_motafalsifa_data").doc(docName).set({
         data,
         updatedAt: new Date().toISOString(),
       });
@@ -272,7 +358,7 @@ export async function syncToFirestoreRest(docName: string, data: any, idToken?: 
 
       for (let idx = 0; idx < chunks.length; idx++) {
         const chunkDocName = `users_chunk_${idx + 1}`;
-        const chunkUrl = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/qalbalelm_data/${chunkDocName}?key=${FIREBASE_API_KEY}`;
+        const chunkUrl = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/al_motafalsifa_data/${chunkDocName}?key=${FIREBASE_API_KEY}`;
         await axios.patch(
           chunkUrl,
           {
@@ -289,7 +375,7 @@ export async function syncToFirestoreRest(docName: string, data: any, idToken?: 
       }
 
       const firstChunk = chunks[0] || [];
-      const manifestUrl = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/qalbalelm_data/users?key=${FIREBASE_API_KEY}`;
+      const manifestUrl = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/al_motafalsifa_data/users?key=${FIREBASE_API_KEY}`;
       const res = await axios.patch(
         manifestUrl,
         {
@@ -308,7 +394,7 @@ export async function syncToFirestoreRest(docName: string, data: any, idToken?: 
       return res.status >= 200 && res.status < 300;
     }
 
-    const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/qalbalelm_data/${docName}?key=${FIREBASE_API_KEY}`;
+    const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/al_motafalsifa_data/${docName}?key=${FIREBASE_API_KEY}`;
     const payload = {
       fields: {
         data: wrapFirestoreValue(data),
@@ -337,7 +423,7 @@ export async function fetchPlatformUsersFromFirestore(): Promise<any[]> {
     const userMap = new Map<string, any>();
     let totalChunks = 1;
 
-    const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/qalbalelm_data/users?key=${FIREBASE_API_KEY}`;
+    const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/al_motafalsifa_data/users?key=${FIREBASE_API_KEY}`;
     const res = await fetch(url);
     if (res.ok) {
       const data = await res.json();
@@ -351,7 +437,7 @@ export async function fetchPlatformUsersFromFirestore(): Promise<any[]> {
 
     for (let idx = 1; idx <= Math.max(totalChunks, 4); idx++) {
       try {
-        const chunkUrl = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/qalbalelm_data/users_chunk_${idx}?key=${FIREBASE_API_KEY}`;
+        const chunkUrl = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/al_motafalsifa_data/users_chunk_${idx}?key=${FIREBASE_API_KEY}`;
         const cRes = await fetch(chunkUrl);
         if (cRes.ok) {
           const cData = await cRes.json();
@@ -369,7 +455,7 @@ export async function fetchPlatformUsersFromFirestore(): Promise<any[]> {
   }
 }
 
-export async function fetchUsersFromDirectUsersCollection(): Promise<any[]> {
+export async function fetchUsersFromDirectUsersCollection(knownIds?: Set<string>): Promise<any[]> {
   try {
     const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/users?pageSize=300&key=${FIREBASE_API_KEY}`;
     const res = await fetch(url);
@@ -383,7 +469,7 @@ export async function fetchUsersFromDirectUsersCollection(): Promise<any[]> {
         fields[k] = unwrapFirestoreValue(v);
       }
       return fields;
-    }).filter(Boolean);
+    }).filter((u: any) => Boolean(u) && !isForeignQalbUser(u) && isBelongingToMotafalsifa(u, knownIds));
   } catch {
     return [];
   }
@@ -415,27 +501,46 @@ export async function findUserByPhoneOrEmail(identifier: string): Promise<{
   const targetEmail = clean.toLowerCase();
   const cleanDigits = clean.replace(/\D/g, "");
 
-  // 1. If admin credentials genuinely exist, query Firestore directly
+  // 1. Check disk users & platform users first (strict platform isolation)
+  try {
+    const diskUsers = readDiskUsers();
+    for (const u of diskUsers) {
+      if (!u || isForeignQalbUser(u)) continue;
+      const uEmail = (u.email || "").trim().toLowerCase();
+      const uPhone = (u.phone || "").trim();
+      if (isEmail ? uEmail === targetEmail : (matchesPhone(clean, uPhone) || (u.nationalId && u.nationalId.trim() === clean))) {
+        return u;
+      }
+    }
+  } catch {}
+
+  // 2. If admin credentials genuinely exist, query Firestore directly (filtered to Al-Motafalsifa)
   const safeDb = getSafeFirestore();
   if (safeDb) {
     try {
       if (isEmail) {
-        const snap = await safeDb.collection("users").where("email", "==", targetEmail).limit(1).get();
-        if (!snap.empty) {
-          const d = snap.docs[0].data();
-          return { id: snap.docs[0].id, name: d.name || d.firstName || "طالب", phone: d.phone || "", email: d.email || targetEmail, ...d };
+        const snap = await safeDb.collection("users").where("email", "==", targetEmail).limit(5).get();
+        for (const doc of snap.docs) {
+          const d = { id: doc.id, ...doc.data() } as any;
+          if (!isForeignQalbUser(d) && isBelongingToMotafalsifa(d)) {
+            return { name: d.name || d.firstName || "طالب", phone: d.phone || "", email: d.email || targetEmail, ...d };
+          }
         }
       } else {
-        const snap = await safeDb.collection("users").where("phone", "==", clean).limit(1).get();
-        if (!snap.empty) {
-          const d = snap.docs[0].data();
-          return { id: snap.docs[0].id, name: d.name || d.firstName || "طالب", phone: d.phone || clean, email: d.email || "", ...d };
+        const snap = await safeDb.collection("users").where("phone", "==", clean).limit(5).get();
+        for (const doc of snap.docs) {
+          const d = { id: doc.id, ...doc.data() } as any;
+          if (!isForeignQalbUser(d) && isBelongingToMotafalsifa(d)) {
+            return { name: d.name || d.firstName || "طالب", phone: d.phone || clean, email: d.email || "", ...d };
+          }
         }
         if (cleanDigits.length >= 10) {
-          const snap2 = await safeDb.collection("users").where("phone", "==", cleanDigits).limit(1).get();
-          if (!snap2.empty) {
-            const d = snap2.docs[0].data();
-            return { id: snap2.docs[0].id, name: d.name || d.firstName || "طالب", phone: d.phone || clean, email: d.email || "", ...d };
+          const snap2 = await safeDb.collection("users").where("phone", "==", cleanDigits).limit(5).get();
+          for (const doc of snap2.docs) {
+            const d = { id: doc.id, ...doc.data() } as any;
+            if (!isForeignQalbUser(d) && isBelongingToMotafalsifa(d)) {
+              return { name: d.name || d.firstName || "طالب", phone: d.phone || clean, email: d.email || "", ...d };
+            }
           }
         }
       }
@@ -444,11 +549,12 @@ export async function findUserByPhoneOrEmail(identifier: string): Promise<{
     }
   }
 
-  // 2. Query Firestore direct 'users' collection via REST API
+  // 3. Query Firestore direct 'users' collection via REST API (strictly isolated to Al-Motafalsifa)
   try {
-    const directUsers = await fetchUsersFromDirectUsersCollection();
+    const knownIds = new Set(readDiskUsers().map((u: any) => String(u.id)));
+    const directUsers = await fetchUsersFromDirectUsersCollection(knownIds);
     for (const u of directUsers) {
-      if (!u) continue;
+      if (!u || isForeignQalbUser(u)) continue;
       const uEmail = (u.email || "").trim().toLowerCase();
       const uPhone = (u.phone || "").trim();
 
@@ -480,7 +586,7 @@ export async function findUserByPhoneOrEmail(identifier: string): Promise<{
     // ignore
   }
 
-  // 3. Query qalbalelm_data/users via REST API
+  // 3. Query al_motafalsifa_data/users via REST API
   try {
     const users = await fetchPlatformUsersFromFirestore();
     for (const u of users) {
@@ -520,7 +626,7 @@ export async function findUserByPhoneOrEmail(identifier: string): Promise<{
     // ignore
   }
 
-  // 4. Fallback for supervisor/admin
+  // 4. Fallback for supervisor/admin and owner teacher
   if (targetEmail === "hos098sam@gmail.com") {
     return {
       id: "admin_hos098sam",
@@ -528,6 +634,18 @@ export async function findUserByPhoneOrEmail(identifier: string): Promise<{
       phone: "01040672314",
       email: "hos098sam@gmail.com",
       role: "admin",
+    };
+  }
+  if (targetEmail === "almtflsft@gmail.com") {
+    return {
+      id: "teacher-1791139743075",
+      name: "أ/ سوزان كريم فهمي",
+      phone: "",
+      email: "almtflsft@gmail.com",
+      role: "teacher",
+      subject: "الفلسفة والمنطق",
+      schoolYear: "الصف الأول الثانوي",
+      status: "active",
     };
   }
   if (cleanDigits === "01040672314" || cleanDigits === "201040672314") {
@@ -567,17 +685,17 @@ export function getAI(): GoogleGenAI {
 }
 
 export const BAC_SYSTEM_INSTRUCTION = `
-أنت "المساعد الذكي لمنصة قلب العلم التعليمية"، مساعد تربوي وعلمي متقدم موجه لطلاب دفعة 2027 ولجميع مراحل الثانوية والشهادات العامة، تحت إشراف: إدارة المنصة.
+أنت "المساعد الذكي لمنصة المتفلسفة  التعليمية"، مساعد تربوي وعلمي متقدم موجه لطلاب دفعة 2027 ولجميع مراحل الثانوية والشهادات العامة، تحت إشراف: إدارة المنصة.
 
 مهامك وأسلوب عملك:
-1. الإجابة: قدم إجابات دقيقة، علمية، ومنظمة بناءً على المناهج التعليمية المعتمدة (الرياضيات، الفيزياء، الكيمياء، الأحياء، الجيولوجيا، اللغة العربية، التاريخ، الجغرافيا، الفلسفة، اللغة الإنجليزية، اللغات الأجنبية).
+1. الإجابة: قدم إجابات دقيقة، علمية، ومنظمة بناءً على المناهج التعليمية المعتمدة (الرياضيات، الفيزياء، الفلسفة والمنطق، الأحياء، الجيولوجيا، اللغة العربية، التاريخ، الجغرافيا، الفلسفة، اللغة الإنجليزية، اللغات الأجنبية).
 2. الشرح: استخدم أسلوباً مبسطاً، مقسماً إلى نقاط أو خطوات واضحة ليسهل على الطالب فهمها وحفظها.
 3. التلخيص: عند طلب تلخيص الدروس، ركز على الأفكار الأساسية، المفاهيم المحورية، والقوانين الرئيسية دون حشو.
 4. الدعم: كن مشجعاً، إيجابياً، ومحفزاً دائماً لتقليل توتر الطلاب وبث الثقة في نفوسهم، وازرع فيهم روح التفاؤل والنجاح والتفوق.
 5. صياغة الأسئلة: عند طلب اختبارات، قم بتوليد أسئلة مطابقة لمواصفات الامتحانات الرسمية ببنك الأسئلة مع توفير حلولها النموذجية عند الطلب.
 
 ملاحظة هامة جداً: إذا سألك المستخدم عن هويتك (مثل: من أنت، من صنعك، من طورك، ما اسمك، من صممك)، أجب دائماً وبوضوح بأنك:
-"المساعد الذكي لمنصة قلب العلم التعليمية لدفعة 2027، تم تطويري تحت إشراف إدارة المنصة".
+"المساعد الذكي لمنصة المتفلسفة  التعليمية لدفعة 2027، تم تطويري تحت إشراف إدارة المنصة".
 `;
 
 // ============================================================================
@@ -585,7 +703,7 @@ export const BAC_SYSTEM_INSTRUCTION = `
 // ============================================================================
 
 export interface AuthenticatedRequest extends express.Request {
-  user?: DecodedIdToken | { uid: string; email?: string; role?: string; admin?: boolean; phone_number?: string };
+  user?: DecodedIdToken | { uid: string; email?: string; name?: string; role?: string; isAssistant?: boolean; admin?: boolean; phone_number?: string };
 }
 
 interface RateLimitRecord {
@@ -629,10 +747,10 @@ export function rateLimiter(limit: number, windowMs: number) {
 
 // Strict CORS: No '*' for sensitive APIs; uses ALLOWED_ORIGIN env or platform domains
 const defaultAllowedOrigins = [
-  "https://qalbalelm.web.app",
-  "https://qalbalelm.firebaseapp.com",
-  "https://qalbalelm.vercel.app",
-  "https://qalbalelm.web.app",
+  "https://motafalsifa.vercel.app",
+  "https://al-motafalsifa.firebaseapp.com",
+  "https://alesraa-academy.firebaseapp.com",
+  "https://alesraa-academy.web.app",
 ];
 
 function getCorsOrigin(originHeader?: string): string | null {
@@ -675,32 +793,177 @@ function getCorsOrigin(originHeader?: string): string | null {
   return null;
 }
 
-// Helper to safely decode JWT payload when Admin SDK service account is not configured
-export function decodeJwtPayloadUnsafe(token: string): any {
+// Server-issued HMAC-SHA256 Auth Token Engine
+export function signServerAuthToken(payload: { uid: string; role?: string; email?: string; phone?: string; name?: string }): string {
+  const secret = getOrCreateServerSecret("auth_hmac_secret", "JWT_SECRET");
+  const nowSec = Math.floor(Date.now() / 1000);
+  const body = {
+    uid: payload.uid,
+    role: payload.role || "student",
+    email: payload.email || "",
+    phone_number: payload.phone || "",
+    name: payload.name || "",
+    iat: nowSec,
+    exp: nowSec + 7 * 24 * 60 * 60,
+  };
+  const encoded = Buffer.from(JSON.stringify(body), "utf8").toString("base64url");
+  const sig = crypto.createHmac("sha256", secret).update(encoded).digest("base64url");
+  return `mtaf_v1.${encoded}.${sig}`;
+}
+
+export function verifyServerAuthToken(token: string): any | null {
   try {
-    const parts = String(token || "").split(".");
-    if (parts.length < 2) return null;
-    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
-    const jsonStr = Buffer.from(padded, "base64").toString("utf-8");
-    const parsed = JSON.parse(jsonStr);
-    if (parsed && (parsed.user_id || parsed.sub) && !parsed.uid) {
-      parsed.uid = parsed.user_id || parsed.sub;
-    }
-    return parsed;
+    if (!token || !token.startsWith("mtaf_v1.")) return null;
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    const [, encoded, sig] = parts;
+    const secret = getOrCreateServerSecret("auth_hmac_secret", "JWT_SECRET");
+    const expected = crypto.createHmac("sha256", secret).update(encoded).digest("base64url");
+    const a = Buffer.from(sig, "utf8");
+    const b = Buffer.from(expected, "utf8");
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+    const decoded = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+    if (!decoded || !decoded.uid) return null;
+    if (decoded.exp && decoded.exp < Math.floor(Date.now() / 1000)) return null;
+    return decoded;
   } catch {
     return null;
   }
 }
 
-// Verify Firebase ID Token Middleware (with fallback to decoded JWT / local session)
+const verifiedFbTokenCache = new Map<string, { user: any; expiresAt: number }>();
+
+export function resolveAuthoritativeRoleForUser(uid?: string, email?: string, phone?: string, customClaimsRole?: string): { role: string; isAssistant: boolean; admin: boolean } {
+  const cleanEmail = String(email || "").trim().toLowerCase();
+  const cleanDigits = String(phone || "").replace(/\D/g, "");
+  if (
+    cleanEmail === "hos098sam@gmail.com" ||
+    uid === "admin-hosam-supervisor" ||
+    uid === "admin_hos098sam" ||
+    cleanDigits === "01040672314" ||
+    cleanDigits === "201040672314"
+  ) {
+    return { role: "admin", isAssistant: false, admin: true };
+  }
+  if (cleanEmail === "almtflsft@gmail.com") {
+    return { role: "teacher", isAssistant: false, admin: false };
+  }
+  const diskUsers = readDiskUsers();
+  const matched = diskUsers.find(
+    (u: any) =>
+      u &&
+      ((uid && u.id === uid) ||
+        (cleanEmail && u.email && String(u.email).trim().toLowerCase() === cleanEmail) ||
+        (cleanDigits.length >= 10 && u.phone && matchesPhone(cleanDigits, u.phone)))
+  );
+  if (matched) {
+    const r = String(matched.role || "student").toLowerCase();
+    const isAsst = Boolean(matched.isAssistant) || r === "assistant";
+    return { role: r, isAssistant: isAsst, admin: r === "admin" };
+  }
+  const claimRole = String(customClaimsRole || "student").toLowerCase();
+  return { role: claimRole, isAssistant: claimRole === "assistant", admin: claimRole === "admin" };
+}
+
+export function isStaffUser(u: any): boolean {
+  if (!u) return false;
+  const em = String(u.email || "").toLowerCase();
+  return (
+    u.admin === true ||
+    u.role === "admin" ||
+    u.role === "teacher" ||
+    u.role === "assistant" ||
+    u.isAssistant === true ||
+    em === "hos098sam@gmail.com" ||
+    em === "almtflsft@gmail.com"
+  );
+}
+
+export async function verifyBearerTokenStrict(token: string): Promise<any | null> {
+  if (!token) return null;
+
+  // 1. Server-issued HMAC token
+  const serverDecoded = verifyServerAuthToken(token);
+  if (serverDecoded) {
+    const authz = resolveAuthoritativeRoleForUser(serverDecoded.uid, serverDecoded.email, serverDecoded.phone_number, serverDecoded.role);
+    return {
+      ...serverDecoded,
+      role: authz.role,
+      admin: authz.admin,
+      isAssistant: authz.isAssistant,
+    };
+  }
+
+  // 2. Firebase Admin SDK ID Token verification
+  if (hasAdminServiceAccount()) {
+    try {
+      const adminInst = initFirebaseAdmin();
+      if (adminInst) {
+        const decoded = await getAuth(adminInst).verifyIdToken(token);
+        const authz = resolveAuthoritativeRoleForUser(decoded.uid, decoded.email, decoded.phone_number, (decoded as any).role);
+        return {
+          ...decoded,
+          role: authz.role,
+          admin: authz.admin || (decoded as any).admin === true,
+          isAssistant: authz.isAssistant,
+        };
+      }
+    } catch {}
+  }
+
+  // 3. Cached Identity Toolkit verification for Firebase Web ID tokens (2+ min cache)
+  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+  const cached = verifiedFbTokenCache.get(tokenHash);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.user;
+  }
+
+  try {
+    const restRes = await axios.post(
+      `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_API_KEY}`,
+      { idToken: token },
+      { timeout: 6000 }
+    );
+    const fbUser = restRes.data?.users?.[0];
+    if (fbUser && fbUser.localId) {
+      let customRole = "";
+      try {
+        if (fbUser.customAttributes) {
+          customRole = JSON.parse(fbUser.customAttributes || "{}").role || "";
+        }
+      } catch {}
+      const authz = resolveAuthoritativeRoleForUser(fbUser.localId, fbUser.email, fbUser.phoneNumber, customRole);
+      const resolvedUser = {
+        uid: fbUser.localId,
+        email: fbUser.email || "",
+        phone_number: fbUser.phoneNumber || "",
+        name: fbUser.displayName || "",
+        role: authz.role,
+        admin: authz.admin,
+        isAssistant: authz.isAssistant,
+      };
+      if (verifiedFbTokenCache.size > 1000) verifiedFbTokenCache.clear();
+      verifiedFbTokenCache.set(tokenHash, { user: resolvedUser, expiresAt: Date.now() + 3 * 60 * 1000 });
+      return resolvedUser;
+    }
+  } catch {}
+
+  return null;
+}
+
+export async function optionalAuthUser(req: express.Request): Promise<any | null> {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) return null;
+  const token = authHeader.split("Bearer ")[1]?.trim();
+  if (!token) return null;
+  return await verifyBearerTokenStrict(token);
+}
+
+// Verify Firebase ID Token / Server HMAC Token Middleware (Fail-Closed 401 + Active Session Guard)
 export async function verifyFirebaseToken(req: AuthenticatedRequest, res: express.Response, next: express.NextFunction) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    // Allow local/session-authenticated student/teacher requests that provide user context in body or headers
-    const fallbackUid = String(req.headers["x-user-id"] || req.body?.studentId || req.body?.userId || "local-session-user");
-    req.user = { uid: fallbackUid } as any;
-    return next();
+    return res.status(401).json({ error: "غير مصرح: رمز المصادقة مفقود. يرجى تسجيل الدخول أولاً." });
   }
 
   const token = authHeader.split("Bearer ")[1]?.trim();
@@ -708,24 +971,32 @@ export async function verifyFirebaseToken(req: AuthenticatedRequest, res: expres
     return res.status(401).json({ error: "رمز المصادقة مفقود." });
   }
 
-  try {
-    const adminInst = initFirebaseAdmin();
-    const decoded = await getAuth(adminInst).verifyIdToken(token);
-    req.user = decoded;
-    return next();
-  } catch (err: any) {
-    const decodedFallback = decodeJwtPayloadUnsafe(token);
-    if (decodedFallback && (decodedFallback.uid || decodedFallback.sub || decodedFallback.user_id)) {
-      req.user = decodedFallback;
-      return next();
-    }
-    // Fallback for local/hybrid tokens so authenticated students aren't blocked when service account isn't present
-    req.user = { uid: token.slice(0, 36) || "authenticated-user" } as any;
-    return next();
+  const verifiedUser = await verifyBearerTokenStrict(token);
+  if (!verifiedUser) {
+    return res.status(401).json({ error: "انتهت صلاحية الجلسة أو الرمز غير صالح. يرجى تسجيل الدخول مجدداً." });
   }
+
+  // Request-level Interceptor/Middleware: compare x-session-token & x-device-fingerprint against DB current_session_token
+  const exemptSessionRoutes = ["/api/auth/register-session", "/api/auth/check-session", "/api/auth/validate-session"];
+  const isExempt = exemptSessionRoutes.some((p) => req.path.startsWith(p));
+  if (!isExempt) {
+    const sessionCheck = validateStudentSessionFromRequest(req, verifiedUser);
+    if (!sessionCheck.valid) {
+      return res.status(401).json({
+        success: false,
+        code: "FORCE_LOGOUT",
+        forceLogout: true,
+        sessionKilled: true,
+        error: sessionCheck.message || "تم تسجيل الدخول من جهاز آخر",
+      });
+    }
+  }
+
+  req.user = verifiedUser;
+  return next();
 }
 
-// Role Middleware: Admin Only (Strictly Custom Claims or Server Role)
+// Role Middleware: Admin Only (Strictly Custom Claims or Authoritative Server Role)
 export function requireAdmin(req: AuthenticatedRequest, res: express.Response, next: express.NextFunction) {
   if (!req.user) {
     return res.status(401).json({ error: "يجب تسجيل الدخول كمسؤول للمتابعة." });
@@ -739,19 +1010,14 @@ export function requireAdmin(req: AuthenticatedRequest, res: express.Response, n
   next();
 }
 
-/** Restricted teacher access: teachers and admins only */
+/** Restricted teacher access: teachers, assistants and admins only */
 export function requireRestrictedTeacher(req: AuthenticatedRequest, res: express.Response, next: express.NextFunction) {
   const user = req.user as any;
   if (!user) {
     return res.status(401).json({ error: "يجب تسجيل الدخول أولاً." });
   }
-  const isAuthorized =
-    user.role === "teacher" ||
-    user.role === "admin" ||
-    user.admin === true ||
-    user.email === "hos098sam@gmail.com";
-  if (!isAuthorized) {
-    return res.status(403).json({ error: "صلاحية غير كافية: هذا الإجراء مخصص للمعلمين فقط." });
+  if (!isStaffUser(user)) {
+    return res.status(403).json({ error: "صلاحية غير كافية: هذا الإجراء مخصص للمعلمين والإدارة فقط." });
   }
   next();
 }
@@ -768,14 +1034,18 @@ export function sanitizeTextInput(text: any, maxChars: number = 8000): string {
 
 /** Admin or Secret protection for platform control endpoints (WhatsApp, System operations) */
 export async function requireAdminOrSecret(req: AuthenticatedRequest, res: express.Response, next: express.NextFunction) {
-  // Check 1: Admin setup secret in headers
+  // Check 1: Admin setup secret in headers (timing-safe)
   const adminSecret = req.headers["x-admin-secret-key"] as string | undefined;
-  const configuredSecret = process.env.ADMIN_SETUP_SECRET || "qalbalelm_supervisor_secret_2025";
-  if (adminSecret && adminSecret === configuredSecret) {
-    return next();
+  const configuredSecret = process.env.ADMIN_SETUP_SECRET || "";
+  if (configuredSecret && adminSecret) {
+    const a = Buffer.from(adminSecret, "utf8");
+    const b = Buffer.from(configuredSecret, "utf8");
+    if (a.length === b.length && crypto.timingSafeEqual(a, b)) {
+      return next();
+    }
   }
 
-  // Check 2: Bearer token from Firebase Auth
+  // Check 2: Bearer token (Server HMAC OR Firebase Auth)
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return res.status(401).json({ error: "غير مصرح: يلزم تسجيل الدخول كمسؤول للمنصة." });
@@ -786,49 +1056,84 @@ export async function requireAdminOrSecret(req: AuthenticatedRequest, res: expre
     return res.status(401).json({ error: "رمز المصادقة مفقود." });
   }
 
-  // Attempt 1: Verify via Firebase Admin SDK
-  try {
-    const adminInst = initFirebaseAdmin();
-    if (adminInst) {
-      try {
-        const decoded = await getAuth(adminInst).verifyIdToken(token);
-        req.user = decoded;
-        const isAdm =
-          (decoded as any).admin === true ||
-          (decoded as any).role === "admin" ||
-          (decoded as any).email === "hos098sam@gmail.com";
-        if (isAdm) {
-          return next();
-        }
-      } catch (adminVerifyErr) {
-        // Fall through to REST verification
-      }
-    }
-  } catch {}
-
-  // Attempt 2: Direct REST fallback via Google Identity Toolkit
-  try {
-    const restRes = await axios.post(
-      `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_API_KEY}`,
-      { idToken: token },
-      { timeout: 6000 }
-    );
-    const users = restRes.data?.users;
-    if (users && users.length > 0) {
-      const u = users[0];
-      req.user = { uid: u.localId, email: u.email } as any;
-      const email = (u.email || "").toLowerCase();
-      if (
-        email === "hos098sam@gmail.com" ||
-        (u.customAttributes && JSON.parse(u.customAttributes || "{}").role === "admin")
-      ) {
-        return next();
-      }
-    }
-    return res.status(403).json({ error: "صلاحية غير كافية: هذا الإجراء مخصص لإدارة المنصة فقط." });
-  } catch (err: any) {
+  const verified = await verifyBearerTokenStrict(token);
+  if (!verified) {
     return res.status(401).json({ error: "انتهت صلاحية جلسة المشرف. يرجى تسجيل الدخول مجدداً." });
   }
+
+  req.user = verified;
+  const isAdm =
+    verified.admin === true ||
+    verified.role === "admin" ||
+    String(verified.email || "").toLowerCase() === "hos098sam@gmail.com";
+
+  if (isAdm) {
+    return next();
+  }
+
+  return res.status(403).json({ error: "صلاحية غير كافية: هذا الإجراء مخصص لإدارة المنصة فقط." });
+}
+
+/** Owner Teacher (almtflsft@gmail.com) or Admin access — strictly excludes assistants and students */
+export function requireOwnerTeacherOrAdmin(req: AuthenticatedRequest, res: express.Response, next: express.NextFunction) {
+  const user = req.user as any;
+  if (!user) {
+    return res.status(401).json({ error: "يجب تسجيل الدخول أولاً." });
+  }
+  const em = String(user.email || "").toLowerCase();
+  const isOwnerTeacherOrAdm =
+    user.admin === true ||
+    user.role === "admin" ||
+    user.role === "teacher" ||
+    em === "almtflsft@gmail.com" ||
+    em === "hos098sam@gmail.com";
+
+  if (!isOwnerTeacherOrAdm) {
+    return res.status(403).json({ error: "صلاحية غير كافية: هذا القسم مخصص للمعلمة المالكة أو إدارة المنصة فقط." });
+  }
+  return next();
+}
+
+/** Owner Teacher, Admin, or Setup Secret protection for platform email recovery config */
+export async function requireOwnerTeacherOrAdminOrSecret(req: AuthenticatedRequest, res: express.Response, next: express.NextFunction) {
+  const adminSecret = req.headers["x-admin-secret-key"] as string | undefined;
+  const configuredSecret = process.env.ADMIN_SETUP_SECRET || "";
+  if (configuredSecret && adminSecret) {
+    const a = Buffer.from(adminSecret, "utf8");
+    const b = Buffer.from(configuredSecret, "utf8");
+    if (a.length === b.length && crypto.timingSafeEqual(a, b)) {
+      return next();
+    }
+  }
+
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "غير مصرح: يلزم تسجيل الدخول بحساب المعلمة أو الإدارة." });
+  }
+
+  const token = authHeader.split("Bearer ")[1]?.trim();
+  if (!token) {
+    return res.status(401).json({ error: "رمز المصادقة مفقود." });
+  }
+
+  const verified = await verifyBearerTokenStrict(token);
+  if (!verified) {
+    return res.status(401).json({ error: "انتهت صلاحية الجلسة. يرجى تسجيل الدخول مجدداً." });
+  }
+
+  req.user = verified;
+  const em = String(verified.email || "").toLowerCase();
+  if (
+    verified.admin === true ||
+    verified.role === "admin" ||
+    verified.role === "teacher" ||
+    em === "almtflsft@gmail.com" ||
+    em === "hos098sam@gmail.com"
+  ) {
+    return next();
+  }
+
+  return res.status(403).json({ error: "صلاحية غير كافية: هذا الإجراء مخصص للمعلمة المالكة أو إدارة المنصة فقط." });
 }
 
 /** Protect proxy endpoints against Server-Side Request Forgery (SSRF) */
@@ -889,7 +1194,7 @@ app.use((req, res, next) => {
     res.setHeader("Access-Control-Allow-Credentials", "true");
   }
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, x-admin-secret-key, x-session-id, x-part-number, Range");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, x-admin-secret-key, x-session-id, x-session-token, x-device-fingerprint, x-device-id, x-part-number, Range");
 
   if (req.method === "OPTIONS") {
     return res.status(204).end();
@@ -905,7 +1210,7 @@ app.use("/api/vcdn/upload/part", express.raw({ type: ["application/octet-stream"
 // API: Health check
 // ----------------------------------------------------------------------------
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", service: "منصة قلب العلم التعليمية", timestamp: new Date().toISOString() });
+  res.json({ status: "ok", service: "منصة المتفلسفة  التعليمية", timestamp: new Date().toISOString() });
 });
 
 // ============================================================================
@@ -954,15 +1259,253 @@ export function maskPhoneNumber(phone: string): string {
 // SINGLE-DEVICE SESSION & HARDWARE BINDING ENFORCEMENT REGISTRY (Anti-Account Sharing)
 // ============================================================================
 export const activeUserSessionsStore = new Map<string, string>();
+export interface ActiveSessionMetadata {
+  current_session_token: string;
+  device_fingerprint: string;
+  deviceId?: string;
+  issuedAt: number;
+  role?: string;
+}
+export const activeSessionMetaStore = new Map<string, ActiveSessionMetadata>();
+
+const sessionSseClients = new Map<string, Set<{ res: express.Response; sessionToken: string }>>();
+const sessionWsClients = new Map<string, Set<{ ws: any; sessionToken: string }>>();
+
+export function getStoredSessionMeta(userId?: string, phone?: string): ActiveSessionMetadata | null {
+  const cleanPhone = phone ? String(phone).replace(/\D/g, "") : "";
+  let meta = (userId && activeSessionMetaStore.get(userId)) || (cleanPhone ? activeSessionMetaStore.get(cleanPhone) : undefined);
+  if (meta) return meta;
+
+  const diskUsers = readDiskUsers();
+  const matched = diskUsers.find(
+    (u: any) => u && ((userId && u.id === userId) || (cleanPhone && u.phone && String(u.phone).replace(/\D/g, "") === cleanPhone))
+  );
+  const storedToken = matched?.current_session_token || matched?.activeSessionId;
+  if (storedToken) {
+    meta = {
+      current_session_token: String(storedToken),
+      device_fingerprint: String(matched.device_fingerprint || ""),
+      deviceId: matched.currentDeviceId || undefined,
+      issuedAt: matched.lastLoginAt ? Date.parse(matched.lastLoginAt) || Date.now() : Date.now(),
+      role: matched.role || "student",
+    };
+    if (matched.id) activeSessionMetaStore.set(matched.id, meta);
+    if (matched.phone) activeSessionMetaStore.set(String(matched.phone).replace(/\D/g, ""), meta);
+    return meta;
+  }
+  return null;
+}
+
+export function broadcastForceLogoutToOtherSessions(userId: string, phone: string | undefined, newSessionToken: string) {
+  const keys = Array.from(new Set([userId, phone ? String(phone).replace(/\D/g, "") : ""].filter(Boolean)));
+  const payload = JSON.stringify({
+    event: "force_logout",
+    code: "FORCE_LOGOUT",
+    message: "تم تسجيل الدخول من جهاز آخر",
+    ts: Date.now(),
+  });
+
+  for (const key of keys) {
+    const wsSet = sessionWsClients.get(key);
+    if (wsSet) {
+      for (const client of Array.from(wsSet)) {
+        if (client.sessionToken !== newSessionToken) {
+          try {
+            if (client.ws && client.ws.readyState === 1) {
+              client.ws.send(payload);
+            }
+            setTimeout(() => {
+              try { client.ws?.close(4001, "FORCE_LOGOUT"); } catch {}
+            }, 250);
+          } catch {}
+          wsSet.delete(client);
+        }
+      }
+    }
+
+    const sseSet = sessionSseClients.get(key);
+    if (sseSet) {
+      for (const client of Array.from(sseSet)) {
+        if (client.sessionToken !== newSessionToken) {
+          try {
+            client.res.write(`event: force_logout\ndata: ${payload}\n\n`);
+            client.res.end();
+          } catch {}
+          sseSet.delete(client);
+        }
+      }
+    }
+  }
+}
+
+export function registerAuthoritativeUserSession(params: {
+  userId: string;
+  phone?: string;
+  sessionToken?: string;
+  deviceFingerprint?: string;
+  deviceId?: string;
+  role?: string;
+}): string {
+  const newToken = (params.sessionToken && params.sessionToken.trim()) || crypto.randomUUID();
+  const cleanPhone = params.phone ? String(params.phone).replace(/\D/g, "") : "";
+  const meta: ActiveSessionMetadata = {
+    current_session_token: newToken,
+    device_fingerprint: (params.deviceFingerprint || "").trim(),
+    deviceId: params.deviceId,
+    issuedAt: Date.now(),
+    role: params.role || "student",
+  };
+
+  if (params.userId) {
+    activeUserSessionsStore.set(params.userId, newToken);
+    activeSessionMetaStore.set(params.userId, meta);
+  }
+  if (cleanPhone) {
+    activeUserSessionsStore.set(cleanPhone, newToken);
+    activeSessionMetaStore.set(cleanPhone, meta);
+  }
+
+  broadcastForceLogoutToOtherSessions(params.userId, cleanPhone, newToken);
+  return newToken;
+}
+
+export function validateStudentSessionFromRequest(
+  req: express.Request,
+  verifiedUser: any
+): { valid: boolean; message?: string } {
+  if (!verifiedUser || isStaffUser(verifiedUser) || verifiedUser.role !== "student") {
+    return { valid: true };
+  }
+
+  const uid = String(verifiedUser.uid || verifiedUser.id || "");
+  const phone = String(verifiedUser.phone_number || verifiedUser.phone || "");
+  const storedMeta = getStoredSessionMeta(uid, phone);
+  if (!storedMeta || !storedMeta.current_session_token) {
+    return { valid: true };
+  }
+
+  const incomingToken = String(req.headers["x-session-token"] || req.headers["x-session-id"] || "").trim();
+  const incomingFp = String(req.headers["x-device-fingerprint"] || "").trim();
+
+  if (incomingToken && incomingToken !== storedMeta.current_session_token) {
+    return { valid: false, message: "تم تسجيل الدخول من جهاز آخر" };
+  }
+  if (!incomingToken && req.path.startsWith("/api/video/sign-url")) {
+    return { valid: false, message: "تم تسجيل الدخول من جهاز آخر" };
+  }
+  if (storedMeta.device_fingerprint && incomingFp && storedMeta.device_fingerprint !== incomingFp) {
+    return { valid: false, message: "تم تسجيل الدخول من جهاز آخر أو من متصفح مختلف" };
+  }
+
+  return { valid: true };
+}
+
+export function attachSessionWebSocketServer(httpServer: any) {
+  import("ws")
+    .then(({ WebSocketServer }) => {
+      const wss = new WebSocketServer({ noServer: true });
+
+      httpServer.on("upgrade", async (req: any, socket: any, head: any) => {
+        try {
+          const reqUrl = String(req.url || "");
+          if (!reqUrl.startsWith("/ws/session")) return;
+
+          const parsed = new URL(reqUrl, "http://localhost");
+          const sessionToken = (parsed.searchParams.get("sessionToken") || "").trim();
+          const authToken = (parsed.searchParams.get("authToken") || "").trim();
+          const userId = (parsed.searchParams.get("userId") || "").trim();
+          const phone = (parsed.searchParams.get("phone") || "").replace(/\D/g, "");
+          const fp = (parsed.searchParams.get("fp") || "").trim();
+
+          let verifiedUid = userId;
+          if (authToken) {
+            const verified = await verifyBearerTokenStrict(authToken);
+            if (verified?.uid) verifiedUid = verified.uid;
+          } else if (!userId || !sessionToken) {
+            socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+            socket.destroy();
+            return;
+          }
+
+          wss.handleUpgrade(req, socket, head, (ws: any) => {
+            const stored = getStoredSessionMeta(verifiedUid, phone);
+            const isStale =
+              Boolean(stored?.current_session_token && sessionToken && stored.current_session_token !== sessionToken) ||
+              Boolean(stored?.device_fingerprint && fp && stored.device_fingerprint !== fp);
+
+            if (isStale) {
+              try {
+                ws.send(
+                  JSON.stringify({
+                    event: "force_logout",
+                    code: "FORCE_LOGOUT",
+                    message: "تم تسجيل الدخول من جهاز آخر",
+                  })
+                );
+              } catch {}
+              setTimeout(() => {
+                try { ws.close(4001, "FORCE_LOGOUT"); } catch {}
+              }, 200);
+              return;
+            }
+
+            const clientEntry = { ws, sessionToken };
+            const keys = Array.from(new Set([verifiedUid, phone].filter(Boolean)));
+            for (const k of keys) {
+              if (!sessionWsClients.has(k)) sessionWsClients.set(k, new Set());
+              sessionWsClients.get(k)!.add(clientEntry);
+            }
+
+            try {
+              ws.send(JSON.stringify({ event: "session_active", current_session_token: sessionToken }));
+            } catch {}
+
+            const pingTimer = setInterval(() => {
+              if (ws.readyState === 1) {
+                try { ws.ping(); } catch {}
+              }
+            }, 25000);
+
+            ws.on("close", () => {
+              clearInterval(pingTimer);
+              for (const k of keys) {
+                sessionWsClients.get(k)?.delete(clientEntry);
+              }
+            });
+          });
+        } catch {
+          try { socket.destroy(); } catch {}
+        }
+      });
+    })
+    .catch((err) => {
+      console.warn("WebSocket session server init notice:", err?.message || err);
+    });
+}
 
 // Initialize active sessions from disk users on startup
 export function initActiveUserSessions() {
   try {
     const initialUsers = readDiskUsers();
     for (const u of initialUsers) {
-      if (u && u.activeSessionId) {
-        if (u.id) activeUserSessionsStore.set(u.id, u.activeSessionId);
-        if (u.phone) activeUserSessionsStore.set(String(u.phone).replace(/\D/g, ''), u.activeSessionId);
+      const token = u?.current_session_token || u?.activeSessionId;
+      if (u && token) {
+        const meta: ActiveSessionMetadata = {
+          current_session_token: String(token),
+          device_fingerprint: String(u.device_fingerprint || ""),
+          deviceId: u.currentDeviceId || undefined,
+          issuedAt: u.lastLoginAt ? Date.parse(u.lastLoginAt) || Date.now() : Date.now(),
+          role: u.role || "student",
+        };
+        if (u.id) {
+          activeUserSessionsStore.set(u.id, String(token));
+          activeSessionMetaStore.set(u.id, meta);
+        }
+        if (u.phone) {
+          const cleanP = String(u.phone).replace(/\D/g, "");
+          activeUserSessionsStore.set(cleanP, String(token));
+          activeSessionMetaStore.set(cleanP, meta);
+        }
       }
     }
   } catch (err) {
@@ -1156,6 +1699,7 @@ app.post("/api/auth/login-otp/request", rateLimiter(10, 60 * 1000), async (req, 
       foundUser?.role === "assistant" ||
       foundUser?.isAssistant ||
       rawInput.toLowerCase() === "hos098sam@gmail.com" ||
+      rawInput.toLowerCase() === "almtflsft@gmail.com" ||
       rawInput.replace(/\D/g, "") === "01040672314"
     ) {
       return res.status(403).json({
@@ -1239,7 +1783,7 @@ app.post("/api/auth/login-otp/request", rateLimiter(10, 60 * 1000), async (req, 
       phoneMasked: maskPhoneNumber(targetPhone),
       expiresInSeconds: 300,
       cooldownSeconds: 60,
-      studentName: studentName || "طالب منصة قلب العلم",
+      studentName: studentName || "طالب منصة المتفلسفة ",
       deliveredDirectly: sendResult.deliveredDirectly || false,
       requiresUserInitiatedChat: sendResult.requiresUserInitiatedChat || false,
       whatsappTriggerLink: sendResult.whatsappTriggerLink,
@@ -1351,12 +1895,13 @@ app.post("/api/auth/login-otp/verify", rateLimiter(15, 60 * 1000), async (req, r
       const fallbackUid = targetUid || `student_${Date.now()}_${Math.random().toString(36).substring(7)}`;
       userProfile = {
         id: fallbackUid,
-        name: isSuper ? "إدارة المنصة" : "طالب منصة قلب العلم",
-        email: session.email || `${session.phone.replace(/\D/g, "")}@qalbalelm.edu`,
+        name: isSuper ? "إدارة المنصة" : "طالب منصة المتفلسفة ",
+        email: session.email || `${session.phone.replace(/\D/g, "")}@al-motafalsifa.edu`,
         phone: session.phone,
         role: isSuper ? "admin" : "student",
+        platform: "al_motafalsifa",
         status: "active",
-        schoolYear: "الصف الثالث الثانوي",
+        schoolYear: "الصف الأول الثانوي",
         registeredAt: new Date().toISOString().split("T")[0],
         emailVerified: true,
       };
@@ -1380,18 +1925,22 @@ app.post("/api/auth/login-otp/verify", rateLimiter(15, 60 * 1000), async (req, r
       });
     }
 
-    const deviceSessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substring(2, 10);
+    const incomingFingerprint = String(req.body?.deviceFingerprint || req.headers["x-device-fingerprint"] || "").trim();
+    const currentSessionToken = registerAuthoritativeUserSession({
+      userId: userProfile.id,
+      phone: userProfile.phone,
+      deviceFingerprint: incomingFingerprint,
+      deviceId,
+      role: userProfile.role || "student",
+    });
     const updatedProfile = {
       ...bindingEval.updatedUser,
-      activeSessionId: deviceSessionId,
+      platform: "al_motafalsifa",
+      current_session_token: currentSessionToken,
+      activeSessionId: currentSessionToken,
+      ...(incomingFingerprint ? { device_fingerprint: incomingFingerprint } : {}),
       lastLoginAt: new Date().toISOString(),
     };
-
-    // Kill old sessions immediately on server!
-    activeUserSessionsStore.set(updatedProfile.id, deviceSessionId);
-    if (updatedProfile.phone) {
-      activeUserSessionsStore.set(String(updatedProfile.phone).replace(/\D/g, ''), deviceSessionId);
-    }
 
     try {
       const diskUsers = readDiskUsers();
@@ -1401,7 +1950,10 @@ app.post("/api/auth/login-otp/verify", rateLimiter(15, 60 * 1000), async (req, r
       writeDiskUsers(updatedDisk);
       if (safeDb && updatedProfile.id) {
         safeDb.collection("users").doc(updatedProfile.id).set({
-          activeSessionId: deviceSessionId,
+          platform: "al_motafalsifa",
+          current_session_token: currentSessionToken,
+          activeSessionId: currentSessionToken,
+          device_fingerprint: updatedProfile.device_fingerprint || null,
           currentDeviceId: updatedProfile.currentDeviceId || null,
           currentDeviceName: updatedProfile.currentDeviceName || null,
           deviceChangesHistory: updatedProfile.deviceChangesHistory || [],
@@ -1421,15 +1973,25 @@ app.post("/api/auth/login-otp/verify", rateLimiter(15, 60 * 1000), async (req, r
       }
     }
 
+    const serverAuthToken = signServerAuthToken({
+      uid: updatedProfile.id,
+      role: updatedProfile.role || "student",
+      email: updatedProfile.email || "",
+      phone: updatedProfile.phone || "",
+      name: updatedProfile.name || "",
+    });
+
     const { password: _, ...safeProfile } = updatedProfile;
     return res.json({
       success: true,
       verified: true,
       user: safeProfile,
-      sessionId: deviceSessionId,
+      token: serverAuthToken,
+      sessionId: currentSessionToken,
+      current_session_token: currentSessionToken,
       customToken,
       deviceChangeNotice: bindingEval.deviceChangeNotice,
-      message: "تم التحقق بنجاح من كود الواتساب ومرحباً بك في منصة قلب العلم!",
+      message: "تم التحقق بنجاح من كود الواتساب ومرحباً بك في منصة المتفلسفة !",
     });
   } catch (err: any) {
     console.error("Login OTP verify error:", err);
@@ -1438,7 +2000,7 @@ app.post("/api/auth/login-otp/verify", rateLimiter(15, 60 * 1000), async (req, r
 });
 
 /**
- * 3. Request Forgot Password OTP via Email (qalbalelm@gmail.com)
+ * 3. Request Forgot Password OTP via Email (hos098sam@gmail.com)
  */
 app.post("/api/auth/forgot-password-otp/request", rateLimiter(8, 60 * 1000), async (req, res) => {
   try {
@@ -1465,6 +2027,8 @@ app.post("/api/auth/forgot-password-otp/request", rateLimiter(8, 60 * 1000), asy
       foundUser?.isAssistant ||
       rawInput.toLowerCase() === "hos098sam@gmail.com" ||
       rawRecoveryEmail === "hos098sam@gmail.com" ||
+      rawInput.toLowerCase() === "almtflsft@gmail.com" ||
+      rawRecoveryEmail === "almtflsft@gmail.com" ||
       rawInput.replace(/\D/g, "") === "01040672314"
     ) {
       return res.status(403).json({
@@ -1480,7 +2044,7 @@ app.post("/api/auth/forgot-password-otp/request", rateLimiter(8, 60 * 1000), asy
 
     const targetPhone = foundUser.phone || (!isInputEmail ? rawInput : "");
     const targetUid = foundUser.id || "";
-    const studentName = foundUser.name || "طالب منصة قلب العلم";
+    const studentName = foundUser.name || "طالب منصة المتفلسفة ";
 
     // Determine recipient email:
     // 1. Explicit recoveryEmail provided by the student
@@ -1488,6 +2052,7 @@ app.post("/api/auth/forgot-password-otp/request", rateLimiter(8, 60 * 1000), asy
     // 3. Stored user email if it is a real (non-synthetic) email
     const storedEmail = String(foundUser.email || "").trim().toLowerCase();
     const isStoredSynthetic =
+      storedEmail.endsWith("@al-motafalsifa.edu") ||
       storedEmail.endsWith("@qalb-alam.edu") ||
       storedEmail.endsWith("@qalbalelm.edu") ||
       !storedEmail.includes("@");
@@ -1503,7 +2068,7 @@ app.post("/api/auth/forgot-password-otp/request", rateLimiter(8, 60 * 1000), asy
 
     if (!recipientEmail || !recipientEmail.includes("@")) {
       return res.status(400).json({
-        error: "يرجى إدخال بريدك الإلكتروني الشخصي (Gmail) لإرسال رمز الاسترداد إليه من بريد المنصة qalbalelm@gmail.com.",
+        error: `يرجى إدخال بريدك الإلكتروني الشخصي (Gmail) لإرسال رمز الاسترداد إليه من بريد المنصة ${OFFICIAL_RECOVERY_EMAIL}.`,
         requiresEmail: true,
       });
     }
@@ -1528,7 +2093,7 @@ app.post("/api/auth/forgot-password-otp/request", rateLimiter(8, 60 * 1000), asy
 
     whatsappOtpSessionMap.set(sessionId, session);
 
-    // Send 6-digit recovery code via qalbalelm@gmail.com
+    // Send 6-digit recovery code via hos098sam@gmail.com
     const emailResult = await sendPasswordRecoveryEmail({
       toEmail: recipientEmail,
       otpCode: otp,
@@ -1786,9 +2351,9 @@ app.post("/api/auth/otp/resend", rateLimiter(10, 60 * 1000), async (req, res) =>
 });
 
 // ============================================================================
-// OFFICIAL EMAIL RECOVERY CONFIGURATION (qalbalelm@gmail.com)
+// OFFICIAL EMAIL RECOVERY CONFIGURATION (almtflsft@gmail.com)
 // ============================================================================
-app.get("/api/admin/email-config", requireAdminOrSecret, async (_req, res) => {
+app.get("/api/admin/email-config", requireOwnerTeacherOrAdminOrSecret, async (_req, res) => {
   try {
     const cfg = loadEmailConfig();
     return res.json({
@@ -1810,18 +2375,18 @@ app.get("/api/admin/email-config", requireAdminOrSecret, async (_req, res) => {
   }
 });
 
-app.post("/api/admin/email-config", requireAdminOrSecret, async (req, res) => {
+app.post("/api/admin/email-config", requireOwnerTeacherOrAdminOrSecret, async (req, res) => {
   try {
     const { appPassword, senderName } = req.body || {};
     const cleanPass = String(appPassword || "").replace(/\s+/g, "");
     if (!cleanPass || cleanPass.length < 8) {
       return res.status(400).json({
-        error: "يرجى إدخال كلمة مرور التطبيقات (Google App Password) المكونة من 16 حرفاً الخاصة ببريد qalbalelm@gmail.com.",
+        error: `يرجى إدخال كلمة مرور التطبيقات (Google App Password) المكونة من 16 حرفاً الخاصة ببريد ${OFFICIAL_RECOVERY_EMAIL}.`,
       });
     }
     const updated = saveEmailConfig({
       appPassword: cleanPass,
-      senderName: senderName ? String(senderName).trim() : "منصة قلب العلم التعليمية",
+      senderName: senderName ? String(senderName).trim() : "منصة المتفلسفة  التعليمية",
     });
 
     const safeDb = getSafeFirestore();
@@ -1853,7 +2418,7 @@ app.post("/api/admin/email-config", requireAdminOrSecret, async (req, res) => {
   }
 });
 
-app.post("/api/admin/email-config/test", requireAdminOrSecret, async (req, res) => {
+app.post("/api/admin/email-config/test", requireOwnerTeacherOrAdminOrSecret, async (req, res) => {
   try {
     const { testEmail } = req.body || {};
     const cleanTestEmail = String(testEmail || "").trim().toLowerCase();
@@ -1864,7 +2429,7 @@ app.post("/api/admin/email-config/test", requireAdminOrSecret, async (req, res) 
     const result = await sendPasswordRecoveryEmail({
       toEmail: cleanTestEmail,
       otpCode: testOtp,
-      studentName: "تجربة إدارة منصة قلب العلم",
+      studentName: "تجربة إدارة منصة المتفلسفة ",
     });
 
     if (!result.success) {
@@ -1919,9 +2484,9 @@ app.post("/api/auth/parent-otp/request", rateLimiter(10, 60 * 1000), async (req,
         const snapshots = await Promise.all(queries);
         for (const snap of snapshots) {
           snap.docs.forEach((doc) => {
-            const data = doc.data();
-            if (!matchedStudents.some((s) => s.id === doc.id)) {
-              matchedStudents.push({ id: doc.id, ...data });
+            const data = { id: doc.id, ...doc.data() };
+            if (!isForeignQalbUser(data) && isBelongingToMotafalsifa(data) && !matchedStudents.some((s) => s.id === doc.id)) {
+              matchedStudents.push(data);
             }
           });
         }
@@ -1930,15 +2495,32 @@ app.post("/api/auth/parent-otp/request", rateLimiter(10, 60 * 1000), async (req,
       }
     }
 
-    // Fallback: check direct REST users collection
+    // Fallback: check disk users + direct REST users collection (Al-Motafalsifa only)
     if (matchedStudents.length === 0) {
       try {
+        const diskMatches = readDiskUsers().filter(
+          (u: any) =>
+            u &&
+            !isForeignQalbUser(u) &&
+            isBelongingToMotafalsifa(u) &&
+            (matchesPhone(u.parentPhone, rawParentPhone) ||
+              matchesPhone(u.fatherPhone, rawParentPhone) ||
+              matchesPhone(u.motherPhone, rawParentPhone) ||
+              matchesPhone(u.phone, rawParentPhone))
+        );
+        diskMatches.forEach((m: any) => {
+          if (!matchedStudents.some((s) => s.id === m.id)) matchedStudents.push(m);
+        });
         const allUsers = await fetchUsersFromDirectUsersCollection();
-        const matches = allUsers.filter((u: any) =>
-          matchesPhone(u.parentPhone, rawParentPhone) ||
-          matchesPhone(u.fatherPhone, rawParentPhone) ||
-          matchesPhone(u.motherPhone, rawParentPhone) ||
-          matchesPhone(u.phone, rawParentPhone)
+        const matches = allUsers.filter(
+          (u: any) =>
+            u &&
+            !isForeignQalbUser(u) &&
+            isBelongingToMotafalsifa(u) &&
+            (matchesPhone(u.parentPhone, rawParentPhone) ||
+              matchesPhone(u.fatherPhone, rawParentPhone) ||
+              matchesPhone(u.motherPhone, rawParentPhone) ||
+              matchesPhone(u.phone, rawParentPhone))
         );
         matches.forEach((m) => {
           if (!matchedStudents.some((s) => s.id === m.id)) {
@@ -1950,13 +2532,16 @@ app.post("/api/auth/parent-otp/request", rateLimiter(10, 60 * 1000), async (req,
       }
     }
 
-    // If specific student ID was passed, make sure that student is included
+    // If specific student ID was passed, make sure that student belongs to Al-Motafalsifa
     if (studentId && !matchedStudents.some((s) => s.id === studentId)) {
       if (safeDb) {
         try {
           const sDoc = await safeDb.collection("users").doc(studentId).get();
           if (sDoc.exists) {
-            matchedStudents.unshift({ id: sDoc.id, ...sDoc.data() });
+            const d = { id: sDoc.id, ...sDoc.data() };
+            if (!isForeignQalbUser(d) && isBelongingToMotafalsifa(d)) {
+              matchedStudents.unshift(d);
+            }
           }
         } catch {}
       }
@@ -1970,13 +2555,20 @@ app.post("/api/auth/parent-otp/request", rateLimiter(10, 60 * 1000), async (req,
       });
     }
 
+    const sanitizedMatchedStudents = matchedStudents.map((s) => ({
+      id: s.id,
+      name: s.name,
+      schoolYear: s.schoolYear,
+      schoolName: s.schoolName,
+    }));
+
     // Resolve student names from actual registered students
     const resolvedStudentNames =
       matchedStudents
         .map((s) => s.name)
         .filter(Boolean)
         .join(" و ") ||
-      "طالب منصة قلب العلم";
+      "طالب منصة المتفلسفة ";
 
     // Generate 6-digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -1995,7 +2587,7 @@ app.post("/api/auth/parent-otp/request", rateLimiter(10, 60 * 1000), async (req,
       verified: false,
       studentIds: matchedStudents.map((s) => s.id).filter(Boolean),
       studentNames: resolvedStudentNames,
-      matchedStudents,
+      matchedStudents: sanitizedMatchedStudents,
     };
 
     whatsappOtpSessionMap.set(sessionId, session);
@@ -2007,7 +2599,7 @@ app.post("/api/auth/parent-otp/request", rateLimiter(10, 60 * 1000), async (req,
     const directWhatsAppUrl =
       sendResult.whatsappTriggerLink ||
       `https://wa.me/201551955096?text=${encodeURIComponent(
-        `مرحباً منصة قلب العلم، أرسل لي كود التحقق الخاص بولي أمر الطالب (${resolvedStudentNames}) 🔐`
+        `مرحباً منصة المتفلسفة ، أرسل لي كود التحقق الخاص بولي أمر الطالب (${resolvedStudentNames}) 🔐`
       )}`;
 
     return res.json({
@@ -2017,7 +2609,7 @@ app.post("/api/auth/parent-otp/request", rateLimiter(10, 60 * 1000), async (req,
       expiresInSeconds: 300,
       cooldownSeconds: 60,
       studentNames: resolvedStudentNames,
-      matchedStudents,
+      matchedStudents: sanitizedMatchedStudents,
       deliveredDirectly: sendResult.deliveredDirectly || false,
       requiresUserInitiatedChat: sendResult.requiresUserInitiatedChat || false,
       whatsappTriggerLink: directWhatsAppUrl,
@@ -2102,10 +2694,10 @@ app.post("/api/auth/parent-otp/verify", rateLimiter(15, 60 * 1000), async (req, 
     const mainStudent = session.matchedStudents?.[0];
     const parentUser = {
       id: `parent-${session.phone}`,
-      name: `ولي أمر الطالب (${session.studentNames || mainStudent?.name || "طالب قلب العلم"})`,
+      name: `ولي أمر الطالب (${session.studentNames || mainStudent?.name || "طالب المتفلسفة "})`,
       phone: session.phone,
       parentPhone: session.phone,
-      schoolYear: mainStudent?.schoolYear || "الصف الثالث الثانوي",
+      schoolYear: mainStudent?.schoolYear || "الصف الأول الثانوي",
       role: "parent",
       status: "active",
       guardianVerified: true,
@@ -2116,9 +2708,17 @@ app.post("/api/auth/parent-otp/verify", rateLimiter(15, 60 * 1000), async (req, 
       linkedStudents: session.matchedStudents || [],
     };
 
+    const parentToken = signServerAuthToken({
+      uid: parentUser.id,
+      role: "parent",
+      phone: parentUser.phone,
+      name: parentUser.name,
+    });
+
     return res.json({
       success: true,
       verified: true,
+      token: parentToken,
       user: parentUser,
       linkedStudents: session.matchedStudents || [],
       message: "تم التحقق بنجاح من ولي الأمر، وحفظ وتوثيق بيانات الطالب، وتفعيل الربط الأبوي!",
@@ -2126,6 +2726,123 @@ app.post("/api/auth/parent-otp/verify", rateLimiter(15, 60 * 1000), async (req, 
   } catch (err: any) {
     console.error("Parent OTP verify error:", err);
     return res.status(500).json({ error: "حدث خطأ أثناء تأكيد رمز التحقق لولي الأمر." });
+  }
+});
+
+/**
+ * 6.7. Direct Parent Login by Registered Guardian Phone (Rate-Limited, Isolated to Al-Motafalsifa)
+ */
+app.post("/api/auth/parent-login", rateLimiter(12, 60 * 1000), async (req, res) => {
+  try {
+    const rawPhone = sanitizeTextInput(req.body?.parentPhone || req.body?.phone || "", 60).trim();
+    const cleanDigits = rawPhone.replace(/\D/g, "");
+    if (!cleanDigits || cleanDigits.length < 9) {
+      return res.status(400).json({ error: "يرجى إدخال رقم هاتف ولي الأمر المسجل في حساب الطالب." });
+    }
+
+    const matchedMap = new Map<string, any>();
+    const diskUsers = readDiskUsers();
+    for (const u of diskUsers) {
+      if (!u || isForeignQalbUser(u) || !isBelongingToMotafalsifa(u)) continue;
+      if (
+        matchesPhone(u.parentPhone || "", rawPhone) ||
+        matchesPhone(u.fatherPhone || "", rawPhone) ||
+        matchesPhone(u.motherPhone || "", rawPhone)
+      ) {
+        matchedMap.set(String(u.id), u);
+      }
+    }
+
+    const safeDb = getSafeFirestore();
+    if (matchedMap.size === 0 && safeDb) {
+      try {
+        const queries = [
+          safeDb.collection("users").where("parentPhone", "==", rawPhone).get(),
+          safeDb.collection("users").where("fatherPhone", "==", rawPhone).get(),
+          safeDb.collection("users").where("motherPhone", "==", rawPhone).get(),
+        ];
+        const snaps = await Promise.all(queries);
+        for (const snap of snaps) {
+          snap.docs.forEach((d) => {
+            const data = { id: d.id, ...d.data() };
+            if (!isForeignQalbUser(data) && isBelongingToMotafalsifa(data)) {
+              matchedMap.set(String(d.id), data);
+            }
+          });
+        }
+      } catch {}
+    }
+
+    if (matchedMap.size === 0) {
+      try {
+        const directUsers = await fetchUsersFromDirectUsersCollection();
+        for (const u of directUsers) {
+          if (!u || isForeignQalbUser(u) || !isBelongingToMotafalsifa(u)) continue;
+          if (
+            matchesPhone(u.parentPhone || "", rawPhone) ||
+            matchesPhone(u.fatherPhone || "", rawPhone) ||
+            matchesPhone(u.motherPhone || "", rawPhone)
+          ) {
+            matchedMap.set(String(u.id), u);
+          }
+        }
+      } catch {}
+    }
+
+    const matchedStudents = Array.from(matchedMap.values());
+    if (matchedStudents.length === 0) {
+      return res.status(404).json({
+        error: "لم يتم العثور على طالب مرتبط بهذا الرقم. يرجى التأكد من رقم هاتف ولي الأمر المسجل في استمارة الطالب.",
+      });
+    }
+
+    const safeStudents = matchedStudents.map((s) => ({
+      id: s.id,
+      name: s.name,
+      schoolYear: s.schoolYear,
+      schoolName: s.schoolName,
+      enrolledCourseIds: Array.isArray(s.enrolledCourseIds) ? s.enrolledCourseIds : [],
+      examResults: s.examResults || {},
+      registeredAt: s.registeredAt || "",
+      guardianVerified: Boolean(s.guardianVerified),
+      parentPhone: s.parentPhone || rawPhone,
+    }));
+
+    const stNames = safeStudents.map((s) => s.name).filter(Boolean).join(" و ");
+    const mainStudent = safeStudents[0];
+    const verifiedTimestamp = new Date().toISOString();
+    const parentUser = {
+      id: `parent-${cleanDigits}`,
+      name: `ولي أمر الطالب (${stNames || mainStudent?.name || "طالب المتفلسفة"})`,
+      phone: rawPhone,
+      parentPhone: rawPhone,
+      schoolYear: mainStudent?.schoolYear || "بوابة ولي الأمر",
+      role: "parent" as const,
+      status: "active" as const,
+      guardianVerified: true,
+      guardianVerifiedPhone: rawPhone,
+      guardianVerifiedAt: verifiedTimestamp,
+      registeredAt: verifiedTimestamp.split("T")[0],
+      linkedStudentId: mainStudent?.id,
+      linkedStudents: safeStudents,
+    };
+
+    const parentToken = signServerAuthToken({
+      uid: parentUser.id,
+      role: "parent",
+      phone: rawPhone,
+      name: parentUser.name,
+    });
+
+    return res.json({
+      success: true,
+      token: parentToken,
+      user: parentUser,
+      linkedStudents: safeStudents,
+    });
+  } catch (err: any) {
+    console.error("Parent login error:", err);
+    return res.status(500).json({ error: "تعذر تسجيل دخول ولي الأمر حالياً." });
   }
 });
 
@@ -2364,13 +3081,13 @@ app.get("/api/whatsapp/meta-config", requireAdminOrSecret, async (req, res) => {
     return res.json({
       success: true,
       config: {
-        hasToken: Boolean((config as any).token),
+        hasToken: Boolean(config.hasToken),
         phoneNumberId: config.phoneNumberId || "",
         wabaId: config.wabaId || "",
         templateName: config.templateName || "",
       },
       webhookUrl: `${getAppBaseUrl(req)}/api/webhooks/whatsapp`,
-      verifyToken: "qalbalelm_whatsapp_verify_2027",
+      verifyToken: getOrCreateServerSecret("whatsapp_verify_token", "WHATSAPP_VERIFY_TOKEN"),
     });
   } catch (err: any) {
     return res.status(500).json({ error: "فشل قراءة إعدادات Meta." });
@@ -2380,14 +3097,16 @@ app.get("/api/whatsapp/meta-config", requireAdminOrSecret, async (req, res) => {
 /**
  * 12.1. Official Meta WhatsApp Cloud API Webhook Verification & Incoming Events
  */
-const WHATSAPP_WEBHOOK_VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || "qalbalelm_whatsapp_verify_2027";
+const WHATSAPP_WEBHOOK_VERIFY_TOKEN = getOrCreateServerSecret("whatsapp_verify_token", "WHATSAPP_VERIFY_TOKEN");
 
 app.get(["/api/webhooks/whatsapp", "/api/whatsapp/webhook"], (req, res) => {
   const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
+  const token = String(req.query["hub.verify_token"] || "");
   const challenge = req.query["hub.challenge"];
 
-  if (mode === "subscribe" && (token === WHATSAPP_WEBHOOK_VERIFY_TOKEN || token === "qalbalelm")) {
+  const a = Buffer.from(token, "utf8");
+  const b = Buffer.from(WHATSAPP_WEBHOOK_VERIFY_TOKEN, "utf8");
+  if (mode === "subscribe" && a.length === b.length && crypto.timingSafeEqual(a, b)) {
     console.log("✅ [Meta WhatsApp Webhook] تم التحقق من الـ Webhook بنجاح مع سيرفرات Meta!");
     return res.status(200).send(String(challenge));
   }
@@ -2428,7 +3147,7 @@ app.post("/api/whatsapp/send-student-report", requireAdminOrSecret, async (req, 
     } = req.body || {};
 
     const reportText =
-      `📊 *تقرير المتابعة الأكاديمية - منصة قلب العلم التعليمية* 🎓\n` +
+      `📊 *تقرير المتابعة الأكاديمية - منصة المتفلسفة  التعليمية* 🎓\n` +
       `━━━━━━━━━━━━━━━━━━━━\n` +
       `👤 *اسم الطالب:* ${studentName || "طالب المنصة"}\n` +
       `📚 *الصف الدراسي:* ${schoolYear || "الثانوية العامة"}\n` +
@@ -2439,7 +3158,7 @@ app.post("/api/whatsapp/send-student-report", requireAdminOrSecret, async (req, 
       `⭐ *التقدير العام:* ${gradeBadge}\n` +
       (customNote ? `\n💬 *ملاحظة الإدارة:* ${customNote}\n` : "") +
       `━━━━━━━━━━━━━━━━━━━━\n` +
-      `مع خالص تمنيات أسرة *منصة قلب العلم* بدوام التفوق والنجاح 🌟`;
+      `مع خالص تمنيات أسرة *منصة المتفلسفة * بدوام التفوق والنجاح 🌟`;
 
     const targets: string[] = [];
     if ((targetRecipient === "parent" || targetRecipient === "both") && parentPhone) {
@@ -2538,21 +3257,22 @@ app.post("/api/admin/bootstrap-admin", async (req: AuthenticatedRequest, res) =>
 
     let isAuthorized = false;
 
-    // Check 1: Secret Key provided in headers
-    if (configuredSecret && adminSecret && adminSecret === configuredSecret) {
-      isAuthorized = true;
+    // Check 1: Secret Key provided in headers (timing-safe)
+    if (configuredSecret && adminSecret) {
+      const a = Buffer.from(adminSecret, "utf8");
+      const b = Buffer.from(configuredSecret, "utf8");
+      if (a.length === b.length && crypto.timingSafeEqual(a, b)) {
+        isAuthorized = true;
+      }
     }
 
-    // Check 2: Caller has valid token with admin claim
+    // Check 2: Caller has verified token with admin role
     if (!isAuthorized && req.headers.authorization?.startsWith("Bearer ")) {
-      try {
-        const token = req.headers.authorization.split("Bearer ")[1]?.trim();
-        const adminInst = initFirebaseAdmin();
-        const decoded = await getAuth(adminInst).verifyIdToken(token);
-        if (decoded.admin === true || (decoded as any).role === "admin") {
-          isAuthorized = true;
-        }
-      } catch {}
+      const token = req.headers.authorization.split("Bearer ")[1]?.trim();
+      const verified = token ? await verifyBearerTokenStrict(token) : null;
+      if (verified && (verified.admin === true || verified.role === "admin")) {
+        isAuthorized = true;
+      }
     }
 
     if (!isAuthorized) {
@@ -2605,9 +3325,9 @@ app.get("/api/teacher/dashboard", verifyFirebaseToken, requireRestrictedTeacher,
     if (db) {
       try {
         const [coursesDoc, usersDoc, submissionsDoc] = await Promise.all([
-          db.collection("qalbalelm_data").doc("courses").get(),
-          db.collection("qalbalelm_data").doc("users").get(),
-          db.collection("qalbalelm_data").doc("submissions").get(),
+          db.collection("al_motafalsifa_data").doc("courses").get(),
+          db.collection("al_motafalsifa_data").doc("users").get(),
+          db.collection("al_motafalsifa_data").doc("submissions").get(),
         ]);
         courses = Array.isArray(coursesDoc.data()?.data) ? coursesDoc.data()?.data : [];
         users = Array.isArray(usersDoc.data()?.data) ? usersDoc.data()?.data : [];
@@ -2798,47 +3518,59 @@ app.get("/api/courses/:courseId/verify-access", verifyFirebaseToken, async (req:
     const uid = req.user?.uid;
     if (!uid) return res.status(401).json({ error: "غير مصرح" });
 
-    const isAdm = (req.user as any)?.admin === true || (req.user as any)?.role === "admin" || (req.user as any)?.email === "hos098sam@gmail.com";
+    const isAdm = isStaffUser(req.user);
     if (isAdm) {
       return res.json({ hasAccess: true, reason: "admin" });
     }
 
-    try {
-      const safeDb = getSafeFirestore();
-      if (!safeDb) {
-        return res.json({ hasAccess: true, reason: "client_fallback" });
-      }
+    // Check disk courses & users first (handles non-service-account / local deployments securely & fail-closed)
+    const diskCourses = readDiskCourses();
+    const diskCourse = diskCourses.find((c: any) => c && c.id === courseId);
+    const diskUsers = readDiskUsers();
+    const diskUser = diskUsers.find((u: any) => u && u.id === uid);
 
-      const courseDoc = await safeDb.collection("courses").doc(courseId).get();
-      if (!courseDoc.exists) {
-        return res.status(404).json({ error: "الكورس غير موجود" });
-      }
-
-      const courseData = courseDoc.data() || {};
-      if (courseData.isFree) {
+    if (diskCourse) {
+      if (diskCourse.isFree) {
         return res.json({ hasAccess: true, reason: "public_or_free" });
       }
-
-      const enrollmentSnap = await safeDb.collection("enrollments")
-        .where("studentId", "==", uid)
-        .where("courseId", "==", courseId)
-        .limit(1)
-        .get();
-
-      if (!enrollmentSnap.empty) {
-        return res.json({ hasAccess: true, reason: "enrolled" });
-      }
-
-      const userDoc = await safeDb.collection("users").doc(uid).get();
-      const userData = userDoc.data() || {};
-      const enrolled = Array.isArray(userData.enrolledCourseIds) && userData.enrolledCourseIds.includes(courseId);
-
-      if (enrolled) {
+      if (diskUser && Array.isArray(diskUser.enrolledCourseIds) && diskUser.enrolledCourseIds.includes(courseId)) {
         return res.json({ hasAccess: true, reason: "user_enrolled" });
+      }
+    }
+
+    try {
+      const safeDb = getSafeFirestore();
+      if (safeDb) {
+        const courseDoc = await safeDb.collection("courses").doc(courseId).get();
+        if (!courseDoc.exists && !diskCourse) {
+          return res.status(404).json({ error: "الكورس غير موجود" });
+        }
+
+        const courseData = courseDoc.exists ? (courseDoc.data() || {}) : diskCourse;
+        if (courseData?.isFree) {
+          return res.json({ hasAccess: true, reason: "public_or_free" });
+        }
+
+        const enrollmentSnap = await safeDb.collection("enrollments")
+          .where("studentId", "==", uid)
+          .where("courseId", "==", courseId)
+          .limit(1)
+          .get();
+
+        if (!enrollmentSnap.empty) {
+          return res.json({ hasAccess: true, reason: "enrolled" });
+        }
+
+        const userDoc = await safeDb.collection("users").doc(uid).get();
+        const userData = userDoc.data() || {};
+        const enrolled = Array.isArray(userData.enrolledCourseIds) && userData.enrolledCourseIds.includes(courseId);
+
+        if (enrolled) {
+          return res.json({ hasAccess: true, reason: "user_enrolled" });
+        }
       }
     } catch (fsErr: any) {
       console.warn("Course access Firestore query skipped:", fsErr?.message || fsErr);
-      return res.json({ hasAccess: true, reason: "client_fallback" });
     }
 
     return res.status(403).json({ hasAccess: false, error: "يجب الاشتراك في الكورس لعرض هذا المحتوى التعليمي." });
@@ -2859,7 +3591,7 @@ function isDisallowedUserServer(u: any, deletedUsers: string[]): boolean {
   if (DEMO_USER_IDS.includes(u.id)) return true;
   if (u.phone === 'teacher-4879' || u.phone === '4879') return true;
   if (u.role === 'teacher' && u.name?.trim() === 'حسام احمد مساعد') return true;
-  if (u.email === '4879@qalb-alam.edu') return true;
+  if (isForeignQalbUser(u)) return true;
   return false;
 }
 
@@ -2903,14 +3635,14 @@ function writeDiskUsers(users: any[]): boolean {
     .map((u: any) => {
       const cPhone = u?.phone ? String(u.phone).replace(/\D/g, "") : "";
       const prev = existingMap.get(u.id) || (cPhone.length >= 10 ? existingPhoneMap.get(cPhone) : undefined);
-      if (!prev) return u;
-      return {
-        ...prev,
-        ...u,
-        // Preserve existing password and accountNumber if omitted by sanitized client cache
-        password: u.password !== undefined && u.password !== "" ? u.password : prev.password,
-        accountNumber: u.accountNumber !== undefined && u.accountNumber !== "" ? u.accountNumber : prev.accountNumber,
-      };
+      const rawPw = u.password !== undefined && u.password !== "" ? String(u.password) : (prev?.password || "");
+      const safePw = rawPw && !rawPw.startsWith("scrypt$") ? hashPasswordScrypt(rawPw) : rawPw;
+      const merged = prev ? { ...prev, ...u } : { ...u };
+      if (safePw) merged.password = safePw;
+      else delete merged.password;
+      merged.accountNumber = u.accountNumber !== undefined && u.accountNumber !== "" ? u.accountNumber : prev?.accountNumber;
+      merged.platform = "al_motafalsifa";
+      return merged;
     });
 
   cachedDiskUsers = filtered;
@@ -2924,7 +3656,7 @@ function writeDiskUsers(users: any[]): boolean {
   return true;
 }
 
-const AUTH_VAULT_SECRET = process.env.JWT_SECRET || `qalbalelm_vault_${FIREBASE_PROJECT_ID}_2027_master`;
+const AUTH_VAULT_SECRET = getOrCreateServerSecret("auth_vault_secret", "JWT_SECRET");
 
 function encryptAuthVaultPayload(credsMap: Record<string, { password?: string; accountNumber?: string }>): { iv: string; payload: string } {
   const key = crypto.createHash("sha256").update(AUTH_VAULT_SECRET).digest();
@@ -3243,7 +3975,7 @@ async function fetchFirestoreDocData(docName: string): Promise<any | null> {
   const safeDb = getSafeFirestore();
   if (safeDb) {
     try {
-      const docSnap = await safeDb.collection("qalbalelm_data").doc(docName).get();
+      const docSnap = await safeDb.collection("al_motafalsifa_data").doc(docName).get();
       if (docSnap.exists && docSnap.data()?.data !== undefined) {
         return docSnap.data()?.data;
       }
@@ -3251,7 +3983,7 @@ async function fetchFirestoreDocData(docName: string): Promise<any | null> {
   }
 
   try {
-    const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/qalbalelm_data/${encodeURIComponent(docName)}?key=${FIREBASE_API_KEY}`;
+    const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/al_motafalsifa_data/${encodeURIComponent(docName)}?key=${FIREBASE_API_KEY}`;
     const res = await axios.get(url, { timeout: 4500 });
     if (res.data?.fields?.data !== undefined) {
       return unwrapFirestoreValue(res.data.fields.data);
@@ -3431,20 +4163,25 @@ async function hydrateServerFromCloud(force = false): Promise<void> {
         writeDiskCourses(mergedCourses, false);
       }
 
-      // 3. Hydrate & merge users (Encrypted Cloud Vault + Firestore + Local Disk)
-      const [cloudUsers, directUsers, cloudAuthVault] = await Promise.all([
+      // 3. Hydrate & merge users (Encrypted Cloud Vault + Firestore + Local Disk - Strictly Isolated to Al-Motafalsifa)
+      const [cloudUsers, cloudAuthVault] = await Promise.all([
         fetchPlatformUsersFromFirestore().catch(() => []),
-        fetchUsersFromDirectUsersCollection().catch(() => []),
         fetchFirestoreDocData("server_auth_vault").catch(() => null),
       ]);
       const vaultUsers = Array.isArray(vaultSnapshot?.users) ? vaultSnapshot!.users : [];
       const decryptedCreds = decryptAuthVaultPayload(cloudAuthVault);
       const diskUsers = readDiskUsers();
+      const knownMotafalsifaIds = new Set<string>();
+      diskUsers.forEach((u: any) => u?.id && knownMotafalsifaIds.add(String(u.id)));
+      cloudUsers.forEach((u: any) => u?.id && knownMotafalsifaIds.add(String(u.id)));
+      vaultUsers.forEach((u: any) => u?.id && knownMotafalsifaIds.add(String(u.id)));
+
+      const directUsers = await fetchUsersFromDirectUsersCollection(knownMotafalsifaIds).catch(() => []);
       const userMap = new Map<string, any>();
 
       diskUsers.forEach((u: any) => {
         if (u && u.id && !isDisallowedUserServer(u, activeDeleted.users)) {
-          userMap.set(u.id, u);
+          userMap.set(u.id, { ...u, platform: "al_motafalsifa" });
         }
       });
       cloudUsers.forEach((u: any) => {
@@ -3454,6 +4191,7 @@ async function hydrateServerFromCloud(force = false): Promise<void> {
           userMap.set(u.id, {
             ...prev,
             ...u,
+            platform: "al_motafalsifa",
             password: u.password || prev.password || vaultCred.password,
             accountNumber: u.accountNumber || prev.accountNumber || vaultCred.accountNumber,
           });
@@ -3466,6 +4204,7 @@ async function hydrateServerFromCloud(force = false): Promise<void> {
           userMap.set(u.id, {
             ...prev,
             ...u,
+            platform: "al_motafalsifa",
             password: u.password || prev.password || vaultCred.password,
             accountNumber: u.accountNumber || prev.accountNumber || vaultCred.accountNumber,
           });
@@ -3478,6 +4217,7 @@ async function hydrateServerFromCloud(force = false): Promise<void> {
           userMap.set(u.id, {
             ...prev,
             ...u,
+            platform: "al_motafalsifa",
             password: u.password || prev.password || vaultCred.password,
             accountNumber: u.accountNumber || prev.accountNumber || vaultCred.accountNumber,
           });
@@ -3539,7 +4279,7 @@ async function hydrateServerFromCloud(force = false): Promise<void> {
         writeDiskSettings(mergedSettings);
       }
 
-      // 5. If platform_db_vault.json did not exist yet in the Cloud Vault, seed it immediately!
+      // 5. If cloud vault snapshot did not exist yet, seed it immediately!
       if (!vaultSnapshot) {
         scheduleCloudVaultStateSync();
       }
@@ -3553,6 +4293,73 @@ async function hydrateServerFromCloud(force = false): Promise<void> {
   })();
 
   return cloudHydrationPromise;
+}
+
+function sanitizeUserForClient(u: any): any {
+  if (!u || typeof u !== "object") return null;
+  const copy = { ...u };
+  delete copy.password;
+  delete copy.pin;
+  delete copy.pinCode;
+  delete copy.resetToken;
+  delete copy.otp;
+  delete copy.secretKey;
+  return copy;
+}
+
+function sanitizePublicStaffForPlatformData(u: any): any {
+  if (!u || typeof u !== "object") return null;
+  return {
+    id: u.id,
+    name: u.name,
+    role: u.role,
+    isAssistant: u.isAssistant,
+    assistantSpecialty: u.assistantSpecialty,
+    bio: u.bio,
+    specialization: u.specialization,
+    avatar: u.avatar,
+    subject: u.subject,
+    grade: u.grade,
+    schoolYear: u.schoolYear,
+    status: u.status,
+    platform: "al_motafalsifa",
+  };
+}
+
+function stripExamAnswersFromExam(exam: any): any {
+  if (!exam || typeof exam !== "object") return exam;
+  return {
+    ...exam,
+    questions: Array.isArray(exam.questions)
+      ? exam.questions.map((q: any) => {
+          if (!q || typeof q !== "object") return q;
+          const copy = { ...q };
+          delete copy.correctOptionIndex;
+          delete copy.correctAnswer;
+          delete copy.modelAnswer;
+          delete copy.modelAnswerImage;
+          delete copy.rubricCriteria;
+          return copy;
+        })
+      : exam.questions,
+  };
+}
+
+function stripExamAnswersFromCourse(course: any): any {
+  if (!course || typeof course !== "object") return course;
+  return {
+    ...course,
+    exams: Array.isArray(course.exams) ? course.exams.map(stripExamAnswersFromExam) : course.exams,
+    lessons: Array.isArray(course.lessons)
+      ? course.lessons.map((l: any) => ({
+          ...l,
+          exams: Array.isArray(l?.exams) ? l.exams.map(stripExamAnswersFromExam) : l?.exams,
+          videos: Array.isArray(l?.videos)
+            ? l.videos.map((v: any) => (v?.quiz ? { ...v, quiz: stripExamAnswersFromExam(v.quiz) } : v))
+            : l?.videos,
+        }))
+      : course.lessons,
+  };
 }
 
 // Trigger immediate background hydration on server boot
@@ -3571,25 +4378,27 @@ app.get("/api/courses", async (req, res) => {
       hydrateServerFromCloud(false).catch(() => {});
     }
 
+    const caller = await optionalAuthUser(req);
+    const isStaff = isStaffUser(caller);
+
     const deleted = readDeletedIds();
     const diskCourses = readDiskCourses();
-    const cleanDisk = (diskCourses || []).filter(
+    let cleanDisk = (diskCourses || []).filter(
       (c: any) => c && c.id && !DEMO_COURSE_IDS.includes(c.id) && !deleted.courses.includes(c.id)
     );
-    if (cleanDisk.length > 0) {
-      return res.json({ success: true, courses: cleanDisk, deletedCourseIds: deleted.courses });
+    if (cleanDisk.length === 0) {
+      const cloudCourses = await fetchCloudCourses();
+      if (Array.isArray(cloudCourses) && cloudCourses.length > 0) {
+        const cleanCloud = cloudCourses.filter(
+          (c: any) => c && c.id && !DEMO_COURSE_IDS.includes(c.id) && !deleted.courses.includes(c.id)
+        );
+        writeDiskCourses(cleanCloud);
+        cleanDisk = readDiskCourses();
+      }
     }
 
-    const cloudCourses = await fetchCloudCourses();
-    if (Array.isArray(cloudCourses) && cloudCourses.length > 0) {
-      const cleanCloud = cloudCourses.filter(
-        (c: any) => c && c.id && !DEMO_COURSE_IDS.includes(c.id) && !deleted.courses.includes(c.id)
-      );
-      writeDiskCourses(cleanCloud);
-      return res.json({ success: true, courses: readDiskCourses(), deletedCourseIds: deleted.courses });
-    }
-
-    res.json({ success: true, courses: [], deletedCourseIds: deleted.courses });
+    const safeCourses = isStaff ? cleanDisk : cleanDisk.map(stripExamAnswersFromCourse);
+    res.json({ success: true, courses: safeCourses, deletedCourseIds: deleted.courses });
   } catch (err: any) {
     res.status(500).json({ error: err?.message || "Failed to load courses" });
   }
@@ -3604,7 +4413,7 @@ async function compressServerBase64Image(dataUrl: string): Promise<string> {
   if (cached) return cached;
 
   try {
-    const sharp = (await import("sharp" as any)).default;
+    const sharp = (await import("sharp")).default;
     const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, "");
     const buf = Buffer.from(base64Data, "base64");
     const outBuf = await sharp(buf)
@@ -3645,7 +4454,7 @@ async function deepSanitizeAndCompress(obj: any): Promise<any> {
 }
 
 // Endpoint to save courses (Supports clean updates and deletions without resurrection)
-app.post("/api/courses/save", async (req, res) => {
+app.post("/api/courses/save", verifyFirebaseToken, requireRestrictedTeacher, async (req: AuthenticatedRequest, res) => {
   try {
     const { courses } = req.body;
     if (!Array.isArray(courses)) {
@@ -3679,7 +4488,7 @@ app.post("/api/courses/save", async (req, res) => {
     const safeDb = getSafeFirestore();
     if (safeDb) {
       try {
-        await safeDb.collection("qalbalelm_data").doc("courses").set({
+        await safeDb.collection("al_motafalsifa_data").doc("courses").set({
           data: fullyCompressed,
           updatedAt: new Date().toISOString(),
         });
@@ -3695,7 +4504,7 @@ app.post("/api/courses/save", async (req, res) => {
 });
 
 // Endpoint to delete a specific course permanently
-app.delete("/api/courses/:id", async (req, res) => {
+app.delete("/api/courses/:id", verifyFirebaseToken, requireRestrictedTeacher, async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
     addDeletedId("courses", id);
@@ -3712,7 +4521,7 @@ app.delete("/api/courses/:id", async (req, res) => {
     const safeDb = getSafeFirestore();
     if (safeDb) {
       try {
-        await safeDb.collection("qalbalelm_data").doc("courses").set({
+        await safeDb.collection("al_motafalsifa_data").doc("courses").set({
           data: updated,
           updatedAt: new Date().toISOString(),
         });
@@ -3727,15 +4536,32 @@ app.delete("/api/courses/:id", async (req, res) => {
   }
 });
 
-// Endpoint to delete a user/teacher permanently from Firestore & Server
-app.delete("/api/users/:id", async (req, res) => {
+// Endpoint to delete a user/assistant permanently from Firestore & Server
+app.delete("/api/users/:id", verifyFirebaseToken, requireRestrictedTeacher, async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
+    const caller = req.user as any;
+    const isCallerAdmin =
+      caller?.admin === true ||
+      caller?.role === "admin" ||
+      String(caller?.email || "").toLowerCase() === "hos098sam@gmail.com";
+
+    const existing = readDiskUsers();
+    const targetUser = existing.find((u: any) => u && u.id === id);
+    if (!isCallerAdmin) {
+      const isTeacherCaller =
+        caller?.role === "teacher" ||
+        String(caller?.email || "").toLowerCase() === "almtflsft@gmail.com";
+      const targetIsAssistant = targetUser && (targetUser.role === "assistant" || targetUser.isAssistant === true);
+      if (!isTeacherCaller || !targetIsAssistant) {
+        return res.status(403).json({ error: "صلاحية غير كافية: يُسمح للمعلمة بحذف حسابات المساعدين فقط." });
+      }
+    }
+
     addDeletedId("users", id);
     const authHeader = req.headers.authorization || "";
     const idToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : undefined;
 
-    const existing = readDiskUsers();
     const updated = existing.filter((u: any) => u.id !== id);
     writeDiskUsers(updated);
 
@@ -3754,10 +4580,10 @@ app.delete("/api/users/:id", async (req, res) => {
     if (safeDb) {
       try {
         await safeDb.collection("users").doc(id).delete();
-        const docSnap = await safeDb.collection("qalbalelm_data").doc("users").get();
+        const docSnap = await safeDb.collection("al_motafalsifa_data").doc("users").get();
         if (docSnap.exists && Array.isArray(docSnap.data()?.data)) {
           const filtered = docSnap.data()?.data.filter((u: any) => u.id !== id);
-          await safeDb.collection("qalbalelm_data").doc("users").set({
+          await safeDb.collection("al_motafalsifa_data").doc("users").set({
             data: filtered,
             updatedAt: new Date().toISOString(),
           });
@@ -3766,14 +4592,14 @@ app.delete("/api/users/:id", async (req, res) => {
         console.warn("Firestore delete user notice:", e);
       }
     }
-    res.json({ success: true, deletedUserId: id, users: updated });
+    res.json({ success: true, deletedUserId: id, users: updated.map(sanitizeUserForClient) });
   } catch (err: any) {
     res.status(500).json({ error: err?.message || "Failed to delete user" });
   }
 });
 
 // Endpoint to save/update users list in Firestore
-app.post("/api/users/save", async (req, res) => {
+app.post("/api/users/save", verifyFirebaseToken, requireRestrictedTeacher, async (req: AuthenticatedRequest, res) => {
   try {
     const { users } = req.body;
     const authHeader = req.headers.authorization || "";
@@ -3799,10 +4625,10 @@ app.post("/api/users/save", async (req, res) => {
             const restUrl = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/users/${encodeURIComponent(u.id)}?key=${FIREBASE_API_KEY}`;
             const fieldsObj: Record<string, any> = {};
             for (const [k, v] of Object.entries(u)) {
-              // SECURITY: Never write plaintext passwords to Firestore user documents
               if (k === 'password') continue;
               fieldsObj[k] = wrapFirestoreValue(v);
             }
+            fieldsObj['platform'] = { stringValue: 'al_motafalsifa' };
             fieldsObj['updatedAt'] = { stringValue: new Date().toISOString() };
             fetch(restUrl, {
               method: 'PATCH',
@@ -3818,11 +4644,11 @@ app.post("/api/users/save", async (req, res) => {
         try {
           const cloudSafeUsers = users.map((u: any) => {
             if (!u || typeof u !== "object") return u;
-            const copy = { ...u };
+            const copy = { ...u, platform: "al_motafalsifa" };
             delete copy.password;
             return copy;
           });
-          await safeDb.collection("qalbalelm_data").doc("users").set({
+          await safeDb.collection("al_motafalsifa_data").doc("users").set({
             data: cloudSafeUsers,
             updatedAt: new Date().toISOString(),
           });
@@ -3837,12 +4663,18 @@ app.post("/api/users/save", async (req, res) => {
   }
 });
 
-// Endpoint to save or update a single teacher/user directly
-app.post("/api/users/save-single", async (req, res) => {
+// Endpoint to save or update a single user directly (Strict ownership or Staff + server privilege protection)
+app.post("/api/users/save-single", verifyFirebaseToken, async (req: AuthenticatedRequest, res) => {
   try {
     const { user } = req.body;
     if (!user || !user.id) {
       return res.status(400).json({ error: "Missing user or user id" });
+    }
+
+    const caller = req.user as any;
+    const isStaff = isStaffUser(caller);
+    if (!isStaff && caller?.uid !== user.id) {
+      return res.status(403).json({ error: "غير مصرح بتعديل حساب مستخدم آخر." });
     }
 
     const authHeader = req.headers.authorization || "";
@@ -3853,30 +4685,37 @@ app.post("/api/users/save-single", async (req, res) => {
       (u: any) => u && (u.id === user.id || (user.phone && u.phone && matchesPhone(u.phone, user.phone)))
     );
 
-    // SECURITY: Prevent an existing student account from self-elevating role or forging walletBalance without an admin/teacher token
-    let safeIncomingUser = { ...user };
+    const callerIsAdmin =
+      caller?.admin === true ||
+      caller?.role === "admin" ||
+      String(caller?.email || "").toLowerCase() === "hos098sam@gmail.com";
+
+    // SECURITY: Non-staff callers can NEVER alter role, assistant flags, walletBalance, or enrolledCourseIds
+    let safeIncomingUser = { ...user, platform: "al_motafalsifa" };
+    if (!callerIsAdmin && safeIncomingUser.role === "admin") {
+      safeIncomingUser.role = idx >= 0 ? (existing[idx].role || "student") : "student";
+    }
+    if (safeIncomingUser.password && !String(safeIncomingUser.password).startsWith("scrypt$")) {
+      safeIncomingUser.password = hashPasswordScrypt(String(safeIncomingUser.password));
+    }
     if (idx >= 0) {
       const prevUser = existing[idx];
-      if (prevUser.role === "student" && !idToken) {
-        if (
-          safeIncomingUser.role === "admin" ||
-          safeIncomingUser.role === "teacher" ||
-          safeIncomingUser.role === "assistant" ||
-          safeIncomingUser.isAssistant
-        ) {
-          safeIncomingUser.role = "student";
-          delete safeIncomingUser.isAssistant;
-          delete safeIncomingUser.assistantSpecialty;
-        }
-        // Prevent unauthenticated student request from artificially increasing walletBalance
-        const prevBal = Math.max(0, Number(prevUser.walletBalance) || 0);
-        if (typeof safeIncomingUser.walletBalance === "number" && safeIncomingUser.walletBalance > prevBal) {
-          safeIncomingUser.walletBalance = prevBal;
-        }
+      if (!isStaff) {
+        safeIncomingUser.role = prevUser.role || "student";
+        safeIncomingUser.isAssistant = prevUser.isAssistant;
+        safeIncomingUser.assistantSpecialty = prevUser.assistantSpecialty;
+        safeIncomingUser.walletBalance = prevUser.walletBalance ?? 0;
+        safeIncomingUser.enrolledCourseIds = prevUser.enrolledCourseIds || [];
       }
       if (!safeIncomingUser.password && prevUser.password) {
         safeIncomingUser.password = prevUser.password;
       }
+    } else if (!isStaff) {
+      safeIncomingUser.role = "student";
+      delete safeIncomingUser.isAssistant;
+      delete safeIncomingUser.assistantSpecialty;
+      safeIncomingUser.walletBalance = 0;
+      safeIncomingUser.enrolledCourseIds = [];
     }
 
     let updatedUsers: any[];
@@ -3887,7 +4726,7 @@ app.post("/api/users/save-single", async (req, res) => {
     }
     writeDiskUsers(updatedUsers);
 
-    // 1. Sync updated users array to qalbalelm_data/users unconditionally
+    // 1. Sync updated users array to al_motafalsifa_data/users unconditionally
     syncToFirestoreRest("users", updatedUsers, idToken).catch(() => {});
 
     // 2. Direct REST write to users/{user.id} (without plaintext password)
@@ -3898,6 +4737,7 @@ app.post("/api/users/save-single", async (req, res) => {
         if (k === 'password') continue;
         fieldsObj[k] = wrapFirestoreValue(v);
       }
+      fieldsObj['platform'] = { stringValue: 'al_motafalsifa' };
       fieldsObj['updatedAt'] = { stringValue: new Date().toISOString() };
       const patchHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
       if (idToken) patchHeaders['Authorization'] = `Bearer ${idToken}`;
@@ -3908,43 +4748,37 @@ app.post("/api/users/save-single", async (req, res) => {
       }).catch(() => {});
     } catch {}
 
-    const { password: _, ...clientSafeUser } = safeIncomingUser;
+    const clientSafeUser = sanitizeUserForClient(safeIncomingUser);
     res.json({ success: true, user: clientSafeUser });
   } catch (err: any) {
     res.status(500).json({ error: err?.message || "Failed to save single user" });
   }
 });
 
-app.get("/api/users", async (req, res) => {
+app.get("/api/users", verifyFirebaseToken, requireRestrictedTeacher, async (req: AuthenticatedRequest, res) => {
   try {
     const deleted = readDeletedIds();
     const diskUsers = readDiskUsers() || [];
     const firestoreUsers = await fetchPlatformUsersFromFirestore().catch(() => []);
-    const directUsers = await fetchUsersFromDirectUsersCollection().catch(() => []);
+    const knownIds = new Set<string>();
+    diskUsers.forEach((u: any) => u?.id && knownIds.add(String(u.id)));
+    firestoreUsers.forEach((u: any) => u?.id && knownIds.add(String(u.id)));
+    const directUsers = await fetchUsersFromDirectUsersCollection(knownIds).catch(() => []);
 
     const userMap = new Map<string, any>();
     diskUsers.forEach((u: any) => {
-      if (u && u.id && !isDisallowedUserServer(u, deleted.users)) userMap.set(u.id, u);
+      if (u && u.id && !isDisallowedUserServer(u, deleted.users)) userMap.set(u.id, { ...u, platform: "al_motafalsifa" });
     });
     firestoreUsers.forEach((u: any) => {
-      if (u && u.id && !isDisallowedUserServer(u, deleted.users)) userMap.set(u.id, { ...(userMap.get(u.id) || {}), ...u });
+      if (u && u.id && !isDisallowedUserServer(u, deleted.users)) userMap.set(u.id, { ...(userMap.get(u.id) || {}), ...u, platform: "al_motafalsifa" });
     });
     directUsers.forEach((u: any) => {
-      if (u && u.id && !isDisallowedUserServer(u, deleted.users)) userMap.set(u.id, { ...(userMap.get(u.id) || {}), ...u });
+      if (u && u.id && !isDisallowedUserServer(u, deleted.users)) userMap.set(u.id, { ...(userMap.get(u.id) || {}), ...u, platform: "al_motafalsifa" });
     });
 
     const merged = Array.from(userMap.values())
       .filter((u: any) => !isDisallowedUserServer(u, deleted.users))
-      .map((u: any) => {
-        const copy = { ...u };
-        delete copy.password;
-        delete copy.pin;
-        delete copy.pinCode;
-        delete copy.resetToken;
-        delete copy.otp;
-        delete copy.secretKey;
-        return copy;
-      });
+      .map(sanitizeUserForClient);
 
     if (merged.length > diskUsers.length) {
       writeDiskUsers(Array.from(userMap.values()));
@@ -3980,7 +4814,7 @@ function writeDiskSettings(settings: any): void {
   } catch {}
 }
 
-app.post("/api/settings/save", async (req, res) => {
+app.post("/api/settings/save", verifyFirebaseToken, requireAdmin, async (req: AuthenticatedRequest, res) => {
   try {
     const { settings } = req.body || {};
     if (settings && typeof settings === "object") {
@@ -3989,7 +4823,7 @@ app.post("/api/settings/save", async (req, res) => {
       const safeDb = getSafeFirestore();
       if (safeDb) {
         try {
-          await safeDb.collection("qalbalelm_data").doc("settings").set({
+          await safeDb.collection("al_motafalsifa_data").doc("settings").set({
             data: settings,
             updatedAt: new Date().toISOString(),
           });
@@ -4002,7 +4836,7 @@ app.post("/api/settings/save", async (req, res) => {
   }
 });
 
-// Ultra-fast consolidated data endpoint for school tablets and low-connectivity devices
+// Ultra-fast consolidated data endpoint (strips student PII and exam answer keys for non-staff callers)
 app.get("/api/platform-data", async (req, res) => {
   try {
     if (lastCloudHydrationAt === 0) {
@@ -4013,6 +4847,9 @@ app.get("/api/platform-data", async (req, res) => {
     } else if (Date.now() - lastCloudHydrationAt > 30000) {
       hydrateServerFromCloud(false).catch(() => {});
     }
+
+    const caller = await optionalAuthUser(req);
+    const isStaff = isStaffUser(caller);
 
     const deleted = readDeletedIds();
     const diskExams = readDiskExams();
@@ -4038,29 +4875,44 @@ app.get("/api/platform-data", async (req, res) => {
       }
     }
 
-    // Never expose passwords or sensitive tokens in platform-data
-    const safeUsers = (diskUsers || []).map((u: any) => {
-      if (!u) return null;
-      const copy = { ...u };
-      delete copy.password;
-      delete copy.pin;
-      delete copy.pinCode;
-      delete copy.resetToken;
-      delete copy.otp;
-      delete copy.secretKey;
-      return copy;
-    }).filter(Boolean);
+    const safeCourses = isStaff ? courses : (courses || []).map(stripExamAnswersFromCourse);
+    const safeExams = isStaff ? (diskExams || []) : (diskExams || []).map(stripExamAnswersFromExam);
+
+    let safeUsers: any[] = [];
+    if (isStaff) {
+      safeUsers = (diskUsers || []).map(sanitizeUserForClient).filter(Boolean);
+    } else {
+      safeUsers = (diskUsers || [])
+        .map((u: any) => {
+          if (!u) return null;
+          if (caller?.uid && u.id === caller.uid) {
+            return sanitizeUserForClient(u);
+          }
+          if (u.role === "teacher" || u.role === "admin" || u.role === "assistant" || u.isAssistant) {
+            return sanitizePublicStaffForPlatformData(u);
+          }
+          return null;
+        })
+        .filter(Boolean);
+    }
+
+    // Do not expose raw activation accessCodes or sensitive secrets to non-admin callers
+    let safeSettings = diskSettings || null;
+    if (!isStaff && safeSettings && typeof safeSettings === "object") {
+      const { accessCodes: _ac, walletCodes: _wc, ...publicSettings } = safeSettings;
+      safeSettings = publicSettings;
+    }
 
     res.json({
       success: true,
-      courses: courses || [],
+      courses: safeCourses,
       deletedCourseIds: deleted.courses,
       deletedUserIds: deleted.users,
       deletedVideoIds: deleted.videos || [],
       deletedExamIds: deleted.exams || [],
-      exams: diskExams || [],
+      exams: safeExams,
       users: safeUsers,
-      settings: diskSettings || null,
+      settings: safeSettings,
     });
   } catch (err: any) {
     res.status(500).json({ error: err?.message || "Failed to get platform data" });
@@ -4078,7 +4930,7 @@ app.get("/api/deleted-ids", async (req, res) => {
   res.json({ success: true, ...readDeletedIds() });
 });
 
-app.post("/api/deleted-ids", (req, res) => {
+app.post("/api/deleted-ids", verifyFirebaseToken, requireRestrictedTeacher, (req: AuthenticatedRequest, res) => {
   const { type, id } = req.body;
   const allowedTypes: (keyof DeletedIdsStore)[] = ['courses', 'users', 'videos', 'exams', 'lessons', 'notifications', 'coupons'];
   if (allowedTypes.includes(type) && typeof id === 'string' && id.trim()) {
@@ -4123,7 +4975,7 @@ function generateMobileToken(studentId: string): string {
   return token;
 }
 
-function resolveStudentIdFromReq(req: express.Request): string | null {
+async function resolveVerifiedMobileStudentId(req: express.Request): Promise<string | null> {
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith("Bearer ")) {
     const token = authHeader.substring(7).trim();
@@ -4131,20 +4983,10 @@ function resolveStudentIdFromReq(req: express.Request): string | null {
     if (session && session.expiresAt > Date.now()) {
       return session.studentId;
     }
-    if (token.startsWith("mbl_")) {
-      const parts = token.split("_");
-      if (parts.length >= 2 && parts[1]) {
-        return parts[1];
-      }
+    const verified = await verifyBearerTokenStrict(token);
+    if (verified?.uid) {
+      return verified.uid;
     }
-  }
-  const customHeader = req.headers["x-student-id"] as string;
-  if (customHeader && typeof customHeader === "string") {
-    return customHeader.trim();
-  }
-  const queryId = req.query.studentId as string;
-  if (queryId && typeof queryId === "string") {
-    return queryId.trim();
   }
   return null;
 }
@@ -4153,7 +4995,7 @@ function resolveStudentIdFromReq(req: express.Request): string | null {
  * 1. Mobile Login Endpoint
  * Authenticates student and returns enrolled courses & last lesson
  */
-app.post("/api/mobile/login", async (req, res) => {
+app.post("/api/mobile/login", rateLimiter(20, 60 * 1000), async (req, res) => {
   try {
     const { identifier, password, deviceId, deviceName } = req.body || {};
     const cleanId = sanitizeTextInput(identifier || "", 120).trim();
@@ -4170,9 +5012,9 @@ app.post("/api/mobile/login", async (req, res) => {
     const diskUsers = readDiskUsers();
     const cleanDigits = cleanId.replace(/\D/g, "");
 
-    // Search user in disk users
+    // Search user strictly in Al-Motafalsifa disk users
     let student = diskUsers.find((u: any) => {
-      if (!u || isDisallowedUserServer(u, deleted.users)) return false;
+      if (!u || isDisallowedUserServer(u, deleted.users) || !isBelongingToMotafalsifa(u)) return false;
       const uPhone = (u.phone || "").replace(/\D/g, "");
       const uEmail = (u.email || "").trim().toLowerCase();
       const uNat = (u.nationalId || "").trim();
@@ -4184,14 +5026,6 @@ app.post("/api/mobile/login", async (req, res) => {
       );
     });
 
-    // Fallback: search Firestore
-    if (!student) {
-      const firestoreUser = await findUserByPhoneOrEmail(cleanId);
-      if (firestoreUser && !isDisallowedUserServer(firestoreUser, deleted.users)) {
-        student = firestoreUser;
-      }
-    }
-
     if (!student) {
       return res.status(404).json({
         success: false,
@@ -4199,9 +5033,35 @@ app.post("/api/mobile/login", async (req, res) => {
       });
     }
 
-    // Password verification
+    // Strict Password verification (never skip if storedPw is empty!)
     const storedPw = String(student.password || "").trim();
-    if (storedPw && storedPw !== rawPassword) {
+    let pwVerified = false;
+    if (storedPw) {
+      pwVerified = verifyPasswordScrypt(rawPassword, storedPw);
+    } else if (FIREBASE_API_KEY) {
+      const candidateEmails = new Set<string>();
+      if (student.email && String(student.email).includes("@") && !isForeignQalbUser({ email: student.email })) {
+        candidateEmails.add(String(student.email).trim().toLowerCase());
+      }
+      if (cleanDigits.length >= 10) {
+        candidateEmails.add(`${cleanDigits}@al-motafalsifa.edu`);
+      }
+      for (const candEmail of candidateEmails) {
+        try {
+          const fbRes = await axios.post(
+            `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE_API_KEY}`,
+            { email: candEmail, password: rawPassword, returnSecureToken: true },
+            { timeout: 5000 }
+          );
+          if (fbRes.data?.idToken) {
+            pwVerified = true;
+            break;
+          }
+        } catch {}
+      }
+    }
+
+    if (!pwVerified) {
       return res.status(401).json({
         success: false,
         error: "كلمة المرور غير صحيحة. يرجى التأكد من كلمة المرور والمحاولة مجدداً.",
@@ -4218,7 +5078,11 @@ app.post("/api/mobile/login", async (req, res) => {
     }
 
     // Update student with latest device info
-    const updatedStudent = bindingResult.updatedUser;
+    const updatedStudent = {
+      ...bindingResult.updatedUser,
+      password: hashPasswordScrypt(rawPassword),
+      platform: "al_motafalsifa",
+    };
     const sessionToken = generateMobileToken(updatedStudent.id);
     updatedStudent.activeSessionId = sessionToken;
     updatedStudent.lastLoginAt = new Date().toISOString();
@@ -4246,8 +5110,7 @@ app.post("/api/mobile/login", async (req, res) => {
       }));
 
     // Safe student response without sensitive credentials
-    const safeStudent = { ...updatedStudent };
-    delete safeStudent.password;
+    const safeStudent = sanitizeUserForClient(updatedStudent);
 
     res.json({
       success: true,
@@ -4267,7 +5130,7 @@ app.post("/api/mobile/login", async (req, res) => {
  */
 app.get("/api/mobile/dashboard", async (req, res) => {
   try {
-    const studentId = resolveStudentIdFromReq(req);
+    const studentId = await resolveVerifiedMobileStudentId(req);
     if (!studentId) {
       return res.status(401).json({ success: false, error: "يجب تسجيل الدخول لعرض لوحة الطالب." });
     }
@@ -4393,7 +5256,7 @@ app.get("/api/mobile/dashboard", async (req, res) => {
  */
 app.get("/api/mobile/courses", async (req, res) => {
   try {
-    const studentId = resolveStudentIdFromReq(req);
+    const studentId = await resolveVerifiedMobileStudentId(req);
     const deleted = readDeletedIds();
     const diskUsers = readDiskUsers();
     const student = studentId ? diskUsers.find((u: any) => u.id === studentId) : null;
@@ -4431,7 +5294,7 @@ app.get("/api/mobile/courses", async (req, res) => {
 app.get("/api/mobile/courses/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const studentId = resolveStudentIdFromReq(req);
+    const studentId = await resolveVerifiedMobileStudentId(req);
     const deleted = readDeletedIds();
     const allCourses = readDiskCourses();
     const course = allCourses.find((c: any) => c.id === id);
@@ -4450,6 +5313,7 @@ app.get("/api/mobile/courses/:id", async (req, res) => {
     const safeCourse = {
       ...course,
       isEnrolled,
+      exams: Array.isArray(course.exams) ? course.exams.map((ex: any) => stripExamAnswersFromExam(ex)) : [],
       lessons: (course.lessons || []).map((lesson: any) => ({
         id: lesson.id,
         title: lesson.title,
@@ -4466,7 +5330,7 @@ app.get("/api/mobile/courses/:id", async (req, res) => {
             youtubeId: isEnrolled ? (v.youtubeId || "") : "",
             isLocked: !isEnrolled,
           })),
-        exams: lesson.exams || [],
+        exams: Array.isArray(lesson.exams) ? lesson.exams.map((ex: any) => stripExamAnswersFromExam(ex)) : [],
       })),
     };
 
@@ -4482,10 +5346,13 @@ app.get("/api/mobile/courses/:id", async (req, res) => {
  */
 app.post("/api/mobile/progress/update", async (req, res) => {
   try {
-    const studentId = resolveStudentIdFromReq(req) || req.body.studentId;
+    const studentId = await resolveVerifiedMobileStudentId(req);
+    if (!studentId) {
+      return res.status(401).json({ success: false, error: "غير مصرح: يجب تسجيل الدخول أولاً." });
+    }
     const { courseId, lessonId, videoId, positionSeconds, durationSeconds, completed } = req.body || {};
 
-    if (!studentId || !courseId || !videoId) {
+    if (!courseId || !videoId) {
       return res.status(400).json({ success: false, error: "بيانات التقدم غير مكتملة." });
     }
 
@@ -4537,11 +5404,14 @@ app.post("/api/mobile/progress/update", async (req, res) => {
  */
 app.post("/api/mobile/exams/submit", async (req, res) => {
   try {
-    const studentId = resolveStudentIdFromReq(req) || req.body.studentId;
+    const studentId = await resolveVerifiedMobileStudentId(req);
+    if (!studentId) {
+      return res.status(401).json({ success: false, error: "غير مصرح: يجب تسجيل الدخول أولاً." });
+    }
     const { examId, courseId, answers, timeSpentSeconds } = req.body || {};
 
-    if (!studentId || !examId) {
-      return res.status(400).json({ success: false, error: "معرف الطالب ومعرف الامتحان مطلوبان." });
+    if (!examId) {
+      return res.status(400).json({ success: false, error: "معرف الامتحان مطلوب." });
     }
 
     const diskUsers = readDiskUsers();
@@ -4661,7 +5531,7 @@ app.post("/api/mobile/exams/submit", async (req, res) => {
  */
 app.get("/api/mobile/student/submissions", async (req, res) => {
   try {
-    const studentId = resolveStudentIdFromReq(req);
+    const studentId = await resolveVerifiedMobileStudentId(req);
     if (!studentId) {
       return res.status(401).json({ success: false, error: "يجب تسجيل الدخول لعرض النتائج." });
     }
@@ -4681,7 +5551,7 @@ app.get("/api/mobile/student/submissions", async (req, res) => {
 app.get("/api/mobile/download-zip", (req, res) => {
   const zipPath = path.join(process.cwd(), "public", "flutter_app.zip");
   if (fs.existsSync(zipPath)) {
-    res.setHeader("Content-Disposition", 'attachment; filename="qalbalelm_flutter_app.zip"');
+    res.setHeader("Content-Disposition", 'attachment; filename="al_motafalsifa_flutter_app.zip"');
     res.setHeader("Content-Type", "application/zip");
     return res.sendFile(zipPath);
   }
@@ -4689,12 +5559,14 @@ app.get("/api/mobile/download-zip", (req, res) => {
 });
 
 /**
- * 9. Download Ready-To-Install Android APK File (qalbalelm.apk)
+ * 9. Download Ready-To-Install Android APK File (al_motafalsifa.apk)
  */
-app.get(["/qalbalelm.apk", "/api/download/app.apk", "/app-release.apk"], (req, res) => {
-  const apkPath = path.join(process.cwd(), "public", "qalbalelm.apk");
+app.get(["/al_motafalsifa.apk", "/qalbalelm.apk", "/api/download/app.apk", "/app-release.apk"], (req, res) => {
+  const motafPath = path.join(process.cwd(), "public", "al_motafalsifa.apk");
+  const legacyPath = path.join(process.cwd(), "public", "qalbalelm.apk");
+  const apkPath = fs.existsSync(motafPath) ? motafPath : legacyPath;
   if (fs.existsSync(apkPath)) {
-    res.setHeader("Content-Disposition", 'attachment; filename="qalbalelm.apk"');
+    res.setHeader("Content-Disposition", 'attachment; filename="al_motafalsifa.apk"');
     res.setHeader("Content-Type", "application/vnd.android.package-archive");
     return res.sendFile(apkPath);
   }
@@ -4710,7 +5582,7 @@ app.get(["/api/lessons/:lessonId/secure-video", "/api/lesson-video/secure", "/ap
 /**
  * 11. Programmatic YouTube Video Upload API
  */
-app.post("/api/admin/youtube/upload", requireRestrictedTeacher, async (req, res) => {
+app.post("/api/admin/youtube/upload", verifyFirebaseToken, requireRestrictedTeacher, async (req, res) => {
   try {
     const { filePath, title, description } = req.body || {};
     if (!filePath || !title) {
@@ -4731,7 +5603,7 @@ app.post("/api/admin/youtube/upload", requireRestrictedTeacher, async (req, res)
 // ============================================================================
 
 // Direct Student Registration
-app.post("/api/auth/signup", async (req, res) => {
+app.post("/api/auth/signup", rateLimiter(15, 60 * 1000), async (req, res) => {
   try {
     const { 
       id: incomingId, uid: incomingUid,
@@ -4742,6 +5614,13 @@ app.post("/api/auth/signup", async (req, res) => {
       password, email, activeSessionId: incomingSessionId,
       deviceId, deviceName, syncFromFirebaseAuth
     } = req.body || {};
+
+    if (syncFromFirebaseAuth) {
+      const caller = await optionalAuthUser(req);
+      if (!caller || (incomingId && caller.uid !== incomingId && !isStaffUser(caller))) {
+        return res.status(401).json({ error: "غير مصرح: يجب إرفاق توكن التحقق من Firebase لمزامنة الحساب." });
+      }
+    }
 
     const cleanPhone = (phone || "").trim().replace(/\s+/g, '');
     const cleanDigits = cleanPhone.replace(/\D/g, '');
@@ -4772,7 +5651,8 @@ app.post("/api/auth/signup", async (req, res) => {
 
     // If not syncing from an already-created Firebase Auth user, also ensure the account exists in Firebase Auth
     let firebaseUid = incomingId || incomingUid || existing?.id || "";
-    const generatedEmail = (email || existing?.email || `${cleanDigits}@qalb-alam.edu`).trim().toLowerCase();
+    const rawRequestedEmail = (email || existing?.email || `${cleanDigits}@al-motafalsifa.edu`).trim().toLowerCase();
+    const generatedEmail = isForeignQalbUser({ email: rawRequestedEmail }) ? `${cleanDigits}@al-motafalsifa.edu` : rawRequestedEmail;
 
     if (!syncFromFirebaseAuth) {
       try {
@@ -4803,10 +5683,17 @@ app.post("/api/auth/signup", async (req, res) => {
       name ||
       `${firstName || ''} ${secondName || ''} ${thirdName || ''} ${lastName || ''}`.trim() ||
       existing?.name ||
-      'طالب منصة قلب العلم';
+      'طالب منصة المتفلسفة ';
     const primaryParent = parentPhone || fatherPhone || motherPhone || existing?.parentPhone || '';
-    const deviceSessionId =
-      incomingSessionId || existing?.activeSessionId || 'sess_' + Date.now() + '_' + Math.random().toString(36).substring(2, 10);
+    const incomingFingerprint = String(req.body?.deviceFingerprint || req.headers["x-device-fingerprint"] || "").trim();
+    const deviceSessionId = registerAuthoritativeUserSession({
+      userId: newId,
+      phone: cleanPhone,
+      sessionToken: incomingSessionId || crypto.randomUUID(),
+      deviceFingerprint: incomingFingerprint,
+      deviceId,
+      role: existing?.role || 'student',
+    });
     const nowIso = new Date().toISOString();
 
     const newUser: any = {
@@ -4823,7 +5710,7 @@ app.post("/api/auth/signup", async (req, res) => {
       fatherPhone: fatherPhone || existing?.fatherPhone || '',
       motherPhone: motherPhone || existing?.motherPhone || '',
       parentJob: parentJob || existing?.parentJob || '',
-      schoolYear: schoolYear || existing?.schoolYear || 'الصف الثالث الثانوي',
+      schoolYear: schoolYear || existing?.schoolYear || 'الصف الأول الثانوي',
       division: division !== undefined ? division : (existing?.division || ''),
       governorate: governorate || existing?.governorate || 'السويس',
       schoolName: schoolName || existing?.schoolName || '',
@@ -4832,8 +5719,11 @@ app.post("/api/auth/signup", async (req, res) => {
       gender: gender || existing?.gender || 'ذكر',
       email: generatedEmail,
       role: existing?.role || 'student',
+      platform: 'al_motafalsifa',
       status: 'active',
+      current_session_token: deviceSessionId,
       activeSessionId: deviceSessionId,
+      ...(incomingFingerprint ? { device_fingerprint: incomingFingerprint } : {}),
       currentDeviceId: deviceId || existing?.currentDeviceId || undefined,
       currentDeviceName: deviceName || existing?.currentDeviceName || undefined,
       deviceChangesHistory:
@@ -4854,13 +5744,9 @@ app.post("/api/auth/signup", async (req, res) => {
       examResults: existing?.examResults || {},
       walletBalance: existing?.walletBalance ?? 0,
       walletTransactions: Array.isArray(existing?.walletTransactions) ? existing.walletTransactions : [],
-      password: cleanPass,
+      password: hashPasswordScrypt(cleanPass),
       lastLoginAt: nowIso,
     };
-
-    // Register active session in memory
-    activeUserSessionsStore.set(newId, deviceSessionId);
-    activeUserSessionsStore.set(cleanDigits, deviceSessionId);
 
     // Save to disk without duplicating
     const filteredDisk = diskUsers.filter(
@@ -4885,15 +5771,28 @@ app.post("/api/auth/signup", async (req, res) => {
       }).catch(() => {});
     } catch {}
 
-    const { password: _, ...safeUser } = newUser;
-    return res.json({ success: true, user: safeUser, sessionId: deviceSessionId });
+    const safeUser = sanitizeUserForClient(newUser);
+    const serverToken = signServerAuthToken({
+      uid: newId,
+      email: generatedEmail,
+      role: newUser.role,
+      phone: cleanPhone,
+      name: resolvedName,
+    });
+    return res.json({
+      success: true,
+      user: safeUser,
+      sessionId: deviceSessionId,
+      current_session_token: deviceSessionId,
+      token: serverToken,
+    });
   } catch (err: any) {
     return res.status(500).json({ error: err?.message || "فشل تسجيل الحساب على الخادم." });
   }
 });
 
 // Direct Student / User Login
-app.post("/api/auth/login", async (req, res) => {
+app.post("/api/auth/login", rateLimiter(20, 60 * 1000), async (req, res) => {
   try {
     const { identifier, phone, email, password, deviceId, deviceName } = req.body || {};
     const input = (identifier || phone || email || '').trim();
@@ -4931,7 +5830,8 @@ app.post("/api/auth/login", async (req, res) => {
           isAdminPasswordVerified = true;
         }
       } catch (fbAuthErr: any) {
-        if (cleanPass === (process.env.ADMIN_MASTER_PASSWORD || "Hossam2027")) {
+        const masterPw = process.env.ADMIN_MASTER_PASSWORD || "";
+        if (masterPw && masterPw.length === cleanPass.length && crypto.timingSafeEqual(Buffer.from(cleanPass), Buffer.from(masterPw))) {
           isAdminPasswordVerified = true;
         }
       }
@@ -4955,17 +5855,25 @@ app.post("/api/auth/login", async (req, res) => {
       const deviceSessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substring(2, 10);
       activeUserSessionsStore.set(adminUser.id, deviceSessionId);
       activeUserSessionsStore.set('01040672314', deviceSessionId);
-      const { password: _, ...safeAdminUser } = adminUser;
+      const safeAdminUser = sanitizeUserForClient(adminUser);
+      const serverToken = signServerAuthToken({
+        uid: adminUser.id || 'admin-hosam-supervisor',
+        email: 'hos098sam@gmail.com',
+        role: 'admin',
+        phone: '01040672314',
+        name: adminUser.name || 'إدارة المنصة',
+      });
       return res.json({
         success: true,
         user: { ...safeAdminUser, role: 'admin', status: 'active', activeSessionId: deviceSessionId },
         sessionId: deviceSessionId,
+        token: serverToken,
       });
     }
 
-    // Match student, teacher, or assistant by exact phone, accountNumber, or email
+    // Match student, teacher, or assistant in Al-Motafalsifa DB only
     let user = diskUsers.find((u: any) => {
-      if (!u) return false;
+      if (!u || !isBelongingToMotafalsifa(u)) return false;
       if (isEmail && u.email && u.email.toLowerCase() === targetEmail) return true;
       if (u.accountNumber && u.accountNumber.trim().toLowerCase() === targetEmail) return true;
       if (u.phone && u.phone.trim().toLowerCase() === targetEmail) return true;
@@ -4973,11 +5881,11 @@ app.post("/api/auth/login", async (req, res) => {
       return false;
     });
 
-    // Also query Firestore REST if not found on disk (or to enrich missing fields)
+    // Also query Firestore REST if not found on disk (strictly filtered for Al-Motafalsifa)
     if (!user) {
       try {
         const found = await findUserByPhoneOrEmail(input);
-        if (found) user = found;
+        if (found && isBelongingToMotafalsifa(found)) user = found;
       } catch {}
     }
 
@@ -4985,24 +5893,22 @@ app.post("/api/auth/login", async (req, res) => {
     let verifiedFbUid = "";
     let verifiedFbEmail = "";
 
-    // 1. Check disk password if present
-    if (user && user.password && String(user.password).trim() === cleanPass) {
+    // 1. Check disk password if present (supports both scrypt hashes and legacy plaintext)
+    if (user && user.password && verifyPasswordScrypt(cleanPass, String(user.password))) {
       isPasswordVerified = true;
     }
 
-    // 2. If disk password is missing (e.g., stripped during cloud sync or registered via Firebase Auth)
-    //    or didn't match, verify against Firebase Authentication (Identity Toolkit REST API)
+    // 2. If disk password is missing or didn't match, verify against Firebase Authentication (Al-Motafalsifa emails only)
     if (!isPasswordVerified) {
       const candidateEmails = new Set<string>();
-      if (user?.email && String(user.email).includes("@")) {
+      if (user?.email && String(user.email).includes("@") && !isForeignQalbUser({ email: user.email })) {
         candidateEmails.add(String(user.email).trim().toLowerCase());
       }
-      if (isEmail) {
+      if (isEmail && !isForeignQalbUser({ email: targetEmail })) {
         candidateEmails.add(targetEmail);
       }
       if (cleanDigits.length >= 10) {
-        candidateEmails.add(`${cleanDigits}@qalb-alam.edu`);
-        candidateEmails.add(`${cleanDigits}@qalbalelm.edu`);
+        candidateEmails.add(`${cleanDigits}@al-motafalsifa.edu`);
       }
 
       for (const candEmail of candidateEmails) {
@@ -5039,25 +5945,47 @@ app.post("/api/auth/login", async (req, res) => {
               for (const [k, v] of Object.entries(docData.fields)) {
                 unwrapped[k] = unwrapFirestoreValue(v);
               }
-              user = unwrapped;
+              if (isBelongingToMotafalsifa(unwrapped)) {
+                user = unwrapped;
+              }
             }
           }
         } catch {}
       }
       if (!user) {
+        const isTeacherEmail = (verifiedFbEmail || "").trim().toLowerCase() === "almtflsft@gmail.com";
         user = {
-          id: verifiedFbUid || `st_${Date.now()}`,
-          name: "طالب منصة قلب العلم",
-          phone: cleanDigits || input,
-          email: verifiedFbEmail || `${cleanDigits}@qalb-alam.edu`,
-          role: "student",
+          id: verifiedFbUid || (isTeacherEmail ? "teacher-1791139743075" : `st_${Date.now()}`),
+          name: isTeacherEmail ? "أ/ سوزان كريم فهمي" : "طالب منصة المتفلسفة ",
+          phone: cleanDigits || (isTeacherEmail ? "" : input),
+          email: verifiedFbEmail || `${cleanDigits}@al-motafalsifa.edu`,
+          role: isTeacherEmail ? "teacher" : "student",
+          ...(isTeacherEmail ? { subject: "الفلسفة والمنطق" } : {}),
+          platform: "al_motafalsifa",
           status: "active",
-          schoolYear: "الصف الثالث الثانوي",
+          schoolYear: "الصف الأول الثانوي",
           registeredAt: new Date().toISOString().split("T")[0],
           enrolledCourseIds: [],
           examResults: {},
         };
+      } else if ((user.email || "").trim().toLowerCase() === "almtflsft@gmail.com") {
+        user = {
+          ...user,
+          role: "teacher",
+          status: "active",
+          name: user.name && user.name !== "طالب منصة المتفلسفة " ? user.name : "أ/ سوزان كريم فهمي",
+          subject: user.subject || "الفلسفة والمنطق",
+        };
       }
+    }
+    if (user && (user.email || "").trim().toLowerCase() === "almtflsft@gmail.com") {
+      user = {
+        ...user,
+        role: "teacher",
+        status: "active",
+        name: user.name && user.name !== "طالب منصة المتفلسفة " ? user.name : "أ/ سوزان كريم فهمي",
+        subject: user.subject || "الفلسفة والمنطق",
+      };
     }
 
     if (!user) {
@@ -5080,21 +6008,26 @@ app.post("/api/auth/login", async (req, res) => {
       });
     }
 
-    // Generate fresh session ID to immediately invalidate and kill any previous sessions
-    const deviceSessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substring(2, 10);
+    // Generate fresh UUID current_session_token to immediately overwrite old token and evict old device
+    const incomingFingerprint = String(req.body?.deviceFingerprint || req.headers["x-device-fingerprint"] || "").trim();
+    const deviceSessionId = registerAuthoritativeUserSession({
+      userId: user.id,
+      phone: user.phone,
+      deviceFingerprint: incomingFingerprint,
+      deviceId,
+      role: user.role || 'student',
+    });
     const updatedUser = {
       ...bindingEval.updatedUser,
-      password: cleanPass, // Cache verified password on disk so future logins never fail
+      password: hashPasswordScrypt(cleanPass),
+      platform: "al_motafalsifa",
       status: user.status || 'active',
+      current_session_token: deviceSessionId,
       activeSessionId: deviceSessionId,
+      ...(incomingFingerprint ? { device_fingerprint: incomingFingerprint } : {}),
       lastLoginAt: new Date().toISOString()
     };
 
-    // Kill old sessions immediately on server!
-    activeUserSessionsStore.set(updatedUser.id, deviceSessionId);
-    if (updatedUser.phone) {
-      activeUserSessionsStore.set(String(updatedUser.phone).replace(/\D/g, ''), deviceSessionId);
-    }
     const filteredDisk = diskUsers.filter(
       (u: any) => u && u.id !== updatedUser.id && !(updatedUser.phone && u.phone && matchesPhone(u.phone, updatedUser.phone))
     );
@@ -5105,7 +6038,9 @@ app.post("/api/auth/login", async (req, res) => {
     const safeDb = getSafeFirestore();
     if (safeDb && updatedUser.id) {
       safeDb.collection("users").doc(updatedUser.id).set({
+        current_session_token: deviceSessionId,
         activeSessionId: deviceSessionId,
+        device_fingerprint: updatedUser.device_fingerprint || null,
         currentDeviceId: updatedUser.currentDeviceId || null,
         currentDeviceName: updatedUser.currentDeviceName || null,
         deviceChangesHistory: updatedUser.deviceChangesHistory || [],
@@ -5113,11 +6048,20 @@ app.post("/api/auth/login", async (req, res) => {
       }, { merge: true }).catch(() => {});
     }
 
-    const { password: _, ...safeUser } = updatedUser;
+    const safeUser = sanitizeUserForClient(updatedUser);
+    const serverToken = signServerAuthToken({
+      uid: updatedUser.id,
+      email: updatedUser.email,
+      role: updatedUser.role || 'student',
+      phone: updatedUser.phone,
+      name: updatedUser.name,
+    });
     return res.json({
       success: true,
       user: safeUser,
       sessionId: deviceSessionId,
+      current_session_token: deviceSessionId,
+      token: serverToken,
       deviceChangeNotice: bindingEval.deviceChangeNotice,
     });
   } catch (err: any) {
@@ -5125,12 +6069,82 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
-// Register a newly logged-in device session ID and invalidate previous devices
-app.post("/api/auth/register-session", async (req, res) => {
+// Real-Time Server-Sent Events stream for immediate `force_logout` push (WebSocket fallback)
+app.get("/api/auth/session-events", async (req, res) => {
   try {
-    const { userId, phone, activeSessionId, deviceId, deviceName } = req.body || {};
-    if (!userId || !activeSessionId) {
-      return res.status(400).json({ error: "Missing userId or activeSessionId" });
+    const authToken = String(req.query.authToken || req.headers.authorization?.replace(/^Bearer\s+/i, "") || "").trim();
+    const userIdParam = String(req.query.userId || "").trim();
+    const phoneParam = String(req.query.phone || "").replace(/\D/g, "");
+    const sessionToken = String(req.query.sessionToken || req.headers["x-session-token"] || "").trim();
+    const fp = String(req.query.fp || req.headers["x-device-fingerprint"] || "").trim();
+
+    let resolvedUid = userIdParam;
+    if (authToken) {
+      const verified = await verifyBearerTokenStrict(authToken);
+      if (verified?.uid) resolvedUid = verified.uid;
+    } else if (!userIdParam || !sessionToken) {
+      return res.status(401).json({ error: "غير مصرح" });
+    }
+
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders?.();
+
+    const stored = getStoredSessionMeta(resolvedUid, phoneParam);
+    const isStale =
+      Boolean(stored?.current_session_token && sessionToken && stored.current_session_token !== sessionToken) ||
+      Boolean(stored?.device_fingerprint && fp && stored.device_fingerprint !== fp);
+
+    if (isStale) {
+      res.write(
+        `event: force_logout\ndata: ${JSON.stringify({
+          event: "force_logout",
+          code: "FORCE_LOGOUT",
+          message: "تم تسجيل الدخول من جهاز آخر",
+        })}\n\n`
+      );
+      return res.end();
+    }
+
+    const clientEntry = { res, sessionToken };
+    const keys = Array.from(new Set([resolvedUid, phoneParam].filter(Boolean)));
+    for (const k of keys) {
+      if (!sessionSseClients.has(k)) sessionSseClients.set(k, new Set());
+      sessionSseClients.get(k)!.add(clientEntry);
+    }
+
+    res.write(`event: session_active\ndata: ${JSON.stringify({ current_session_token: sessionToken })}\n\n`);
+
+    const keepAlive = setInterval(() => {
+      try {
+        res.write(`: ping ${Date.now()}\n\n`);
+      } catch {}
+    }, 25000);
+
+    req.on("close", () => {
+      clearInterval(keepAlive);
+      for (const k of keys) {
+        sessionSseClients.get(k)?.delete(clientEntry);
+      }
+    });
+  } catch {
+    if (!res.headersSent) res.status(500).end();
+  }
+});
+
+// Register a newly logged-in device session token and invalidate previous devices
+app.post("/api/auth/register-session", verifyFirebaseToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { userId, phone, activeSessionId, current_session_token, deviceId, deviceName, deviceFingerprint } = req.body || {};
+    const requestedToken = String(current_session_token || activeSessionId || "").trim() || crypto.randomUUID();
+    const cleanFp = String(deviceFingerprint || req.headers["x-device-fingerprint"] || "").trim();
+    if (!userId) {
+      return res.status(400).json({ error: "Missing userId" });
+    }
+    if (!isStaffUser(req.user) && req.user?.uid !== userId) {
+      return res.status(403).json({ error: "غير مصرح: لا يمكنك تعديل جلسة مستخدم آخر." });
     }
 
     const cleanPhone = phone ? String(phone).replace(/\D/g, '') : '';
@@ -5155,11 +6169,15 @@ app.post("/api/auth/register-session", async (req, res) => {
       }
     }
 
-    // Server-authoritative: Kill all old sessions immediately!
-    activeUserSessionsStore.set(userId, activeSessionId);
-    if (cleanPhone) {
-      activeUserSessionsStore.set(cleanPhone, activeSessionId);
-    }
+    // Server-authoritative: Overwrite old token and notify previous devices immediately!
+    const storedToken = registerAuthoritativeUserSession({
+      userId,
+      phone: cleanPhone,
+      sessionToken: requestedToken,
+      deviceFingerprint: cleanFp,
+      deviceId,
+      role: existing?.role || req.user?.role || 'student',
+    });
 
     // Update disk users
     let found = false;
@@ -5173,7 +6191,9 @@ app.post("/api/auth/register-session", async (req, res) => {
         deviceNotice = bindingEval.deviceChangeNotice;
         targetUser = {
           ...bindingEval.updatedUser,
-          activeSessionId,
+          current_session_token: storedToken,
+          activeSessionId: storedToken,
+          ...(cleanFp ? { device_fingerprint: cleanFp } : {}),
           lastLoginAt: nowIso,
         };
         return targetUser;
@@ -5190,9 +6210,11 @@ app.post("/api/auth/register-session", async (req, res) => {
     if (safeDb && targetUser) {
       try {
         const updatePayload: any = {
-          activeSessionId,
+          current_session_token: storedToken,
+          activeSessionId: storedToken,
           lastLoginAt: nowIso,
         };
+        if (cleanFp) updatePayload.device_fingerprint = cleanFp;
         if (targetUser.currentDeviceId) {
           updatePayload.currentDeviceId = targetUser.currentDeviceId;
           updatePayload.currentDeviceName = targetUser.currentDeviceName || null;
@@ -5202,59 +6224,67 @@ app.post("/api/auth/register-session", async (req, res) => {
       } catch {}
     }
 
-    return res.json({ success: true, activeSessionId, deviceChangeNotice: deviceNotice });
+    return res.json({
+      success: true,
+      activeSessionId: storedToken,
+      current_session_token: storedToken,
+      deviceChangeNotice: deviceNotice,
+    });
   } catch (err: any) {
     return res.status(500).json({ error: err?.message || "Failed to register session" });
   }
 });
 
 // Validate whether a client's session is still active or was killed by another device login
-app.post("/api/auth/validate-session", async (req, res) => {
+app.post("/api/auth/validate-session", verifyFirebaseToken, async (req: AuthenticatedRequest, res) => {
   try {
-    const { userId, phone, sessionId } = req.body || {};
+    const { userId, phone, sessionId, current_session_token } = req.body || {};
+    const clientToken = String(current_session_token || sessionId || req.headers["x-session-token"] || "").trim();
+    const clientFp = String(req.headers["x-device-fingerprint"] || "").trim();
     if (!userId) return res.status(400).json({ valid: false, error: "Missing userId" });
-
-    const cleanPhone = phone ? String(phone).replace(/\D/g, '') : '';
-    let serverSession = activeUserSessionsStore.get(userId) || (cleanPhone ? activeUserSessionsStore.get(cleanPhone) : undefined);
-
-    if (!serverSession) {
-      const diskUsers = readDiskUsers();
-      const matched = diskUsers.find(
-        (u: any) => u && (u.id === userId || (cleanPhone && u.phone && String(u.phone).replace(/\D/g, '') === cleanPhone))
-      );
-      if (matched?.activeSessionId) {
-        serverSession = matched.activeSessionId;
-        activeUserSessionsStore.set(userId, serverSession!);
-      }
+    if (!isStaffUser(req.user) && req.user?.uid !== userId) {
+      return res.status(403).json({ valid: false, error: "غير مصرح: لا يمكنك التحقق من جلسة مستخدم آخر." });
     }
 
-    if (!serverSession || !sessionId) {
-      return res.json({ valid: true, activeSessionId: serverSession || sessionId });
+    const meta = getStoredSessionMeta(userId, phone);
+    const serverSession = meta?.current_session_token;
+
+    if (!serverSession || !clientToken) {
+      return res.json({ valid: true, activeSessionId: serverSession || clientToken, current_session_token: serverSession || clientToken });
     }
 
-    if (serverSession !== sessionId) {
+    if (serverSession !== clientToken || (meta?.device_fingerprint && clientFp && meta.device_fingerprint !== clientFp)) {
       return res.status(401).json({
         valid: false,
         sessionKilled: true,
-        code: "SESSION_KILLED_BY_CONCURRENT_DEVICE",
-        error: "تم تسجيل الدخول إلى هذا الحساب من جهاز آخر الآن. تم إنهاء جلستك على هذا الجهاز لحماية الحساب ومنع المشاركة.",
+        forceLogout: true,
+        code: "FORCE_LOGOUT",
+        error: "تم تسجيل الدخول من جهاز آخر",
         activeSessionId: serverSession,
       });
     }
 
-    return res.json({ valid: true, activeSessionId: serverSession });
+    return res.json({ valid: true, activeSessionId: serverSession, current_session_token: serverSession });
   } catch (err: any) {
     return res.status(500).json({ valid: false, error: err?.message });
   }
 });
 
-// Check current active session ID and authoritative role for a user account
-app.get("/api/auth/check-session/:userId", async (req, res) => {
+// Check current active session token and authoritative role for a user account
+app.get("/api/auth/check-session/:userId", verifyFirebaseToken, async (req: AuthenticatedRequest, res) => {
   try {
     const { userId } = req.params;
+    if (!isStaffUser(req.user) && req.user?.uid !== userId) {
+      return res.status(403).json({ error: "غير مصرح: لا يمكنك الاطلاع على حالة جلسة مستخدم آخر." });
+    }
     const rawPhone = (req.query.phone as string) || '';
     const cleanPhone = rawPhone.replace(/\D/g, '');
-    const clientSessionId = (req.query.sessionId as string) || (req.headers['x-session-id'] as string) || '';
+    const clientSessionId =
+      (req.headers['x-session-token'] as string) ||
+      (req.query.sessionId as string) ||
+      (req.headers['x-session-id'] as string) ||
+      '';
+    const clientFp = String(req.headers['x-device-fingerprint'] || '').trim();
     const claimedRole = (req.query.role as string) || '';
 
     const diskUsers = readDiskUsers();
@@ -5262,15 +6292,10 @@ app.get("/api/auth/check-session/:userId", async (req, res) => {
       (u: any) => u && (u.id === userId || (cleanPhone && u.phone && String(u.phone).replace(/\D/g, '') === cleanPhone))
     );
 
-    let activeSessionId = activeUserSessionsStore.get(userId) || (cleanPhone ? activeUserSessionsStore.get(cleanPhone) : undefined);
+    const meta = getStoredSessionMeta(userId, cleanPhone);
+    const activeSessionId = meta?.current_session_token || matched?.current_session_token || matched?.activeSessionId || null;
 
-    if (!activeSessionId && matched?.activeSessionId) {
-      activeSessionId = matched.activeSessionId;
-      activeUserSessionsStore.set(userId, activeSessionId!);
-      if (cleanPhone) activeUserSessionsStore.set(cleanPhone, activeSessionId!);
-    }
-
-    // SECURITY: Verify if a student attempted to tamper with their role in DevTools (e.g. changing role to 'admin' or 'teacher')
+    // SECURITY: Verify if a student attempted to tamper with their role in DevTools
     let roleTampered = false;
     const actualRole =
       userId === 'admin-hosam-supervisor' || cleanPhone === '01040672314'
@@ -5285,18 +6310,34 @@ app.get("/api/auth/check-session/:userId", async (req, res) => {
       roleTampered = true;
     }
 
-    const sessionKilled = !!(activeSessionId && clientSessionId && activeSessionId !== clientSessionId) || roleTampered;
+    const tokenMismatch = !!(activeSessionId && clientSessionId && activeSessionId !== clientSessionId);
+    const fpMismatch = !!(meta?.device_fingerprint && clientFp && meta.device_fingerprint !== clientFp);
+    const sessionKilled = tokenMismatch || fpMismatch || roleTampered;
+
+    if (sessionKilled && !roleTampered) {
+      return res.status(401).json({
+        success: false,
+        code: "FORCE_LOGOUT",
+        forceLogout: true,
+        sessionKilled: true,
+        activeSessionId,
+        current_session_token: activeSessionId,
+        actualRole,
+        roleTampered: false,
+        error: "تم تسجيل الدخول من جهاز آخر",
+        message: "تم تسجيل الدخول من جهاز آخر",
+      });
+    }
 
     return res.json({
       success: true,
       activeSessionId: activeSessionId || null,
+      current_session_token: activeSessionId || null,
       actualRole,
       roleTampered,
       sessionKilled,
       message: roleTampered
         ? "تم اكتشاف محاولة تلاعب بصلاحيات الحساب. تم إبطال الجلسة فوراً."
-        : sessionKilled
-        ? "تم تسجيل الدخول من جهاز آخر وإنهاء هذه الجلسة لحماية الحساب."
         : undefined,
     });
   } catch (err: any) {
@@ -5305,7 +6346,7 @@ app.get("/api/auth/check-session/:userId", async (req, res) => {
 });
 
 // Admin: Reset a student's bound device (clears binding and allows student to bind a new device)
-app.post("/api/admin/reset-student-device", async (req, res) => {
+app.post("/api/admin/reset-student-device", verifyFirebaseToken, requireAdmin, async (req: AuthenticatedRequest, res) => {
   try {
     const { studentId } = req.body || {};
     if (!studentId) {
@@ -5352,7 +6393,10 @@ app.post("/api/admin/reset-student-device", async (req, res) => {
 
 app.get("/api/exams", async (req, res) => {
   try {
-    const exams = readDiskExams();
+    const authUser = await optionalAuthUser(req);
+    const staff = isStaffUser(authUser);
+    const rawExams = readDiskExams();
+    const exams = staff ? rawExams : rawExams.map((ex: any) => stripExamAnswersFromExam(ex));
     res.json({ success: true, exams });
   } catch (err: any) {
     res.status(500).json({ error: err?.message || "Failed to load exams" });
@@ -5407,7 +6451,7 @@ app.post("/api/exams/save", verifyFirebaseToken, requireRestrictedTeacher, async
         }, { merge: true });
 
         if (courseUpdated) {
-          await safeDb.collection("qalbalelm_data").doc("courses").set({
+          await safeDb.collection("al_motafalsifa_data").doc("courses").set({
             data: updatedCourses,
             updatedAt: new Date().toISOString(),
           }, { merge: true });
@@ -5427,19 +6471,19 @@ app.post("/api/exams/save", verifyFirebaseToken, requireRestrictedTeacher, async
 // VIDEO SHIELD & ZERO-LEAK TOKEN CRYPTOGRAPHY
 // Protects video sources from students & hackers, eliminates external redirects
 // ============================================================================
-const VIDEO_SECRET_KEY = process.env.APP_SECRET || "qalbalelm_shield_video_secret_2027";
+const VIDEO_SECRET_KEY = getOrCreateServerSecret("video_ticket_secret", "APP_SECRET");
+const VIDEO_DERIVED_KEY = crypto.scryptSync(VIDEO_SECRET_KEY, "al_motafalsifa_video_salt", 32);
 
 export function encryptVideoTicket(payload: { url: string; videoId?: string; studentId?: string; title?: string }): string {
   try {
     const iv = crypto.randomBytes(12);
-    const key = crypto.scryptSync(VIDEO_SECRET_KEY, "qalbalelm_salt", 32);
-    const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+    const cipher = crypto.createCipheriv("aes-256-gcm", VIDEO_DERIVED_KEY, iv);
     let enc = cipher.update(JSON.stringify(payload), "utf8", "base64url");
     enc += cipher.final("base64url");
     const tag = cipher.getAuthTag().toString("base64url");
     return `${iv.toString("base64url")}.${tag}.${enc}`;
   } catch {
-    return Buffer.from(JSON.stringify(payload)).toString("base64url");
+    return "";
   }
 }
 
@@ -5451,34 +6495,166 @@ export function decryptVideoTicket(ticket: string): { url: string; videoId?: str
       const parts = clean.split(".");
       if (parts.length === 3) {
         const [ivStr, tagStr, enc] = parts;
-        const key = crypto.scryptSync(VIDEO_SECRET_KEY, "qalbalelm_salt", 32);
-        const decipher = crypto.createDecipheriv("aes-256-gcm", key, Buffer.from(ivStr, "base64url"));
+        const decipher = crypto.createDecipheriv("aes-256-gcm", VIDEO_DERIVED_KEY, Buffer.from(ivStr, "base64url"));
         decipher.setAuthTag(Buffer.from(tagStr, "base64url"));
         let dec = decipher.update(enc, "base64url", "utf8");
         dec += decipher.final("utf8");
-        return JSON.parse(dec);
+        const parsed = JSON.parse(dec);
+        if (parsed?.url && (parsed.url.startsWith("/") || isSafePublicUrl(parsed.url))) {
+          return parsed;
+        }
+        return null;
       }
     }
-    // Fallback: parse base64url JSON (handles client-side tickets with URL encoding)
+    // Legacy client-side base64url ticket from mediaUtils.ts (strictly SSRF-validated)
     const decoded = Buffer.from(clean, "base64url").toString("utf8");
+    let parsed: any = null;
     try {
-      return JSON.parse(decoded);
+      parsed = JSON.parse(decoded);
     } catch {
-      return JSON.parse(decodeURIComponent(decoded));
+      parsed = JSON.parse(decodeURIComponent(decoded));
     }
+    if (parsed?.url && typeof parsed.url === "string" && (parsed.url.startsWith("/") || isSafePublicUrl(parsed.url))) {
+      return parsed;
+    }
+    return null;
   } catch {
     return null;
   }
 }
 
 // ----------------------------------------------------------------------------
+// API: Generate Short-Lived Signed Video URL (HMAC-SHA256 + Session Token Bound)
+// Expires every few minutes and immediately invalidates if student is evicted
+// ----------------------------------------------------------------------------
+export function signVideoStreamToken(payload: {
+  videoId?: string;
+  url?: string;
+  uid: string;
+  sessionToken?: string;
+  fp?: string;
+  ttlSeconds?: number;
+}): { token: string; exp: number } {
+  const ttl = Math.max(60, Math.min(payload.ttlSeconds || 180, 600));
+  const exp = Math.floor(Date.now() / 1000) + ttl;
+  const body = {
+    vid: payload.videoId || "",
+    u: payload.url || "",
+    uid: payload.uid,
+    sid: payload.sessionToken || "",
+    fp: payload.fp || "",
+    exp,
+    n: crypto.randomBytes(6).toString("hex"),
+  };
+  const encoded = Buffer.from(JSON.stringify(body), "utf8").toString("base64url");
+  const sig = crypto.createHmac("sha256", VIDEO_SECRET_KEY).update(encoded).digest("base64url");
+  return { token: `mvs_v1.${encoded}.${sig}`, exp };
+}
+
+export function verifyVideoStreamToken(token: string): {
+  valid: boolean;
+  reason?: "INVALID" | "EXPIRED" | "FORCE_LOGOUT";
+  data?: { vid?: string; u?: string; uid: string; sid?: string; fp?: string; exp: number };
+} {
+  try {
+    if (!token || !token.startsWith("mvs_v1.")) {
+      return { valid: false, reason: "INVALID" };
+    }
+    const parts = token.split(".");
+    if (parts.length !== 3) return { valid: false, reason: "INVALID" };
+    const [, encoded, sig] = parts;
+    const expected = crypto.createHmac("sha256", VIDEO_SECRET_KEY).update(encoded).digest("base64url");
+    const a = Buffer.from(sig, "utf8");
+    const b = Buffer.from(expected, "utf8");
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+      return { valid: false, reason: "INVALID" };
+    }
+    const decoded = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+    if (!decoded || !decoded.uid || !decoded.exp) {
+      return { valid: false, reason: "INVALID" };
+    }
+    if (Math.floor(Date.now() / 1000) > Number(decoded.exp)) {
+      return { valid: false, reason: "EXPIRED" };
+    }
+
+    // Ensure the session token bound to this video URL is still the active device session!
+    if (decoded.sid) {
+      const meta = getStoredSessionMeta(String(decoded.uid));
+      if (meta && meta.current_session_token && meta.current_session_token !== decoded.sid && meta.role === "student") {
+        return { valid: false, reason: "FORCE_LOGOUT" };
+      }
+    }
+    return { valid: true, data: decoded };
+  } catch {
+    return { valid: false, reason: "INVALID" };
+  }
+}
+
+app.post("/api/video/sign-url", verifyFirebaseToken, (req: AuthenticatedRequest, res: express.Response) => {
+  try {
+    const { rawUrl, videoId, sourceType } = req.body || {};
+    const cleanUrl = typeof rawUrl === "string" ? rawUrl.trim() : "";
+    const uid = String(req.user?.uid || "");
+    const sessionToken = String(req.headers["x-session-token"] || req.headers["x-session-id"] || "").trim();
+    const fp = String(req.headers["x-device-fingerprint"] || "").trim();
+
+    if (!cleanUrl && !videoId) {
+      return res.status(400).json({ error: "رابط الفيديو أو معرفه مطلوب." });
+    }
+    if (cleanUrl && !cleanUrl.startsWith("/") && !isSafePublicUrl(cleanUrl) && !cleanUrl.startsWith("degoo_") && !cleanUrl.startsWith("vcdn:")) {
+      return res.status(400).json({ error: "رابط الفيديو غير صالح أمنياً." });
+    }
+
+    const ttlSeconds = 180; // 3-minute short-lived URL
+    const { token: svt, exp } = signVideoStreamToken({
+      videoId: videoId ? String(videoId) : undefined,
+      url: cleanUrl,
+      uid,
+      sessionToken,
+      fp,
+      ttlSeconds,
+    });
+
+    let signedUrl = "";
+    const vcdnMatch = cleanUrl.match(/(?:\/api\/vcdn\/stream\/|^vcdn:)([a-zA-Z0-9_-]{8,})/i);
+    if (sourceType === "vcdn" || vcdnMatch) {
+      const vid = vcdnMatch ? vcdnMatch[1] : String(videoId || "").replace(/^vcdn:/, "");
+      signedUrl = `/api/vcdn/stream/${encodeURIComponent(vid)}?svt=${encodeURIComponent(svt)}`;
+    } else if (extractDegooShareHash(cleanUrl)) {
+      const degooHash = extractDegooShareHash(cleanUrl)!;
+      signedUrl = `/api/video/stream/degoo_${encodeURIComponent(degooHash)}?svt=${encodeURIComponent(svt)}`;
+    } else if (cleanUrl.includes("/api/video/stream/")) {
+      const sep = cleanUrl.includes("?") ? "&" : "?";
+      signedUrl = `${cleanUrl.split("?")[0]}${sep}svt=${encodeURIComponent(svt)}`;
+    } else {
+      const ticket = encryptVideoTicket({
+        url: cleanUrl,
+        videoId: videoId ? String(videoId) : "v_" + Date.now(),
+        studentId: uid,
+      });
+      signedUrl = `/api/video/stream/${encodeURIComponent(ticket)}?svt=${encodeURIComponent(svt)}`;
+    }
+
+    return res.json({
+      success: true,
+      signedUrl,
+      svt,
+      expiresAt: exp * 1000,
+      ttlSeconds,
+    });
+  } catch {
+    return res.status(500).json({ error: "فشل توليد رابط الفيديو المؤقت." });
+  }
+});
+
+// ----------------------------------------------------------------------------
 // API: Generate Secure Video Ticket (Zero-leak proxy token)
 // ----------------------------------------------------------------------------
-app.post("/api/video/ticket", (req: express.Request, res: express.Response) => {
+app.post("/api/video/ticket", verifyFirebaseToken, (req: AuthenticatedRequest, res: express.Response) => {
   try {
     const { url, videoId, title } = req.body || {};
-    if (!url || typeof url !== "string") {
-      return res.status(400).json({ error: "رابط الفيديو مطلوب لتوليد التذكرة المشفرة." });
+    if (!url || typeof url !== "string" || (!url.trim().startsWith("/") && !isSafePublicUrl(url.trim()))) {
+      return res.status(400).json({ error: "رابط الفيديو مطلوب ويجب أن يكون رابطاً عاماً صالحاً." });
     }
     const ticket = encryptVideoTicket({ url: url.trim(), videoId: videoId || "v_" + Date.now(), title });
     return res.json({
@@ -5995,14 +7171,41 @@ app.get(["/api/video/resolve", "/api/video/resolve-terabox", "/video/resolve-ter
 app.get(["/api/video/stream/:videoId", "/video/stream/:videoId"], async (req: express.Request, res: express.Response) => {
   try {
     const { videoId } = req.params;
+    const svtParam = String(req.query.svt || "").trim();
+    let signedUrlFallback = "";
 
-    // 1. Resolve target video direct URL from ticket, payload, or DB
+    if (svtParam) {
+      const svtCheck = verifyVideoStreamToken(svtParam);
+      if (!svtCheck.valid) {
+        if (svtCheck.reason === "FORCE_LOGOUT") {
+          return res.status(401).json({
+            success: false,
+            code: "FORCE_LOGOUT",
+            forceLogout: true,
+            error: "تم تسجيل الدخول من جهاز آخر",
+          });
+        }
+        return res.status(403).json({
+          success: false,
+          code: "SIGNED_URL_EXPIRED",
+          error: "انتهت صلاحية رابط الفيديو المؤقت. يرجى تحديث المشغل.",
+        });
+      }
+      if (svtCheck.data?.u) {
+        signedUrlFallback = svtCheck.data.u;
+      }
+    }
+
+    // 1. Resolve target video direct URL from ticket, payload, signed token, or DB
     let directVideoUrl = "";
 
     // Check Ticket in URL parameter or query payload
     const ticketData = decryptVideoTicket(videoId) || (req.query.payload ? decryptVideoTicket(String(req.query.payload)) : null);
     if (ticketData && ticketData.url) {
       directVideoUrl = ticketData.url;
+    }
+    if (!directVideoUrl && signedUrlFallback) {
+      directVideoUrl = signedUrlFallback;
     }
 
     // Check fallbackUrl, url, or directUrl query parameter
@@ -6160,11 +7363,9 @@ app.get(["/api/video/stream/:videoId", "/video/stream/:videoId"], async (req: ex
         res.setHeader("Content-Length", String(upstreamResponse.headers["content-length"]));
       }
 
-      // Standard video streaming caching headers to allow byte-range buffering
+      // Prevent public/proxy caching on short-lived signed streams and avoid wildcard CORS
       res.setHeader("Content-Disposition", 'inline; filename="stream.mp4"');
-      res.setHeader("Cache-Control", "public, max-age=3600, no-transform");
-      res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("Access-Control-Allow-Headers", "*");
+      res.setHeader("Cache-Control", svtParam ? "private, no-store, no-cache, must-revalidate" : "private, max-age=300, no-transform");
       res.setHeader("X-Content-Type-Options", "nosniff");
 
       // Pipe video stream chunk directly to client
@@ -6251,7 +7452,7 @@ app.get(["/api/video/embed", "/api/video/embed/:videoId"], async (req: express.R
       } catch {}
     }
 
-    if (!targetUrl) {
+    if (!targetUrl || !isSafePublicUrl(targetUrl)) {
       return res.status(404).send(`
         <!DOCTYPE html>
         <html lang="ar" dir="rtl">
@@ -6301,14 +7502,14 @@ app.get(["/api/video/embed", "/api/video/embed/:videoId"], async (req: express.R
     // 0. Degoo Share Link: Play directly via /api/video/stream with anti-leak and anti-piracy
     const degooHash = extractDegooShareHash(targetUrl) || (videoId.startsWith("degoo_") ? videoId.replace(/^degoo_/, "") : null);
     if (degooHash) {
-      const streamEndpoint = `/api/video/stream/degoo_${degooHash}`;
+      const streamEndpoint = `/api/video/stream/degoo_${encodeURIComponent(degooHash)}`;
       return res.send(`
         <!DOCTYPE html>
         <html lang="ar" dir="rtl">
         <head>
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>مشغل الفيديو المحمي - منصة قلب العلم</title>
+          <title>مشغل الفيديو المحمي - منصة المتفلسفة </title>
           <style>
             * { box-sizing: border-box; margin: 0; padding: 0; }
             html, body { width: 100%; height: 100%; background: #000; overflow: hidden; display: flex; align-items: center; justify-content: center; }
@@ -6318,8 +7519,8 @@ app.get(["/api/video/embed", "/api/video/embed/:videoId"], async (req: express.R
           ${antiRedirectScript}
         </head>
         <body>
-          <div class="watermark">بث محمي لمنصة قلب العلم</div>
-          <video src="${streamEndpoint}" controls autoplay playsinline controlsList="nodownload nofullscreen noremoteplayback" disablePictureInPicture></video>
+          <div class="watermark">بث محمي لمنصة المتفلسفة </div>
+          <video src="${escapeHtmlAttr(streamEndpoint)}" controls autoplay playsinline controlsList="nodownload nofullscreen noremoteplayback" disablePictureInPicture></video>
         </body>
         </html>
       `);
@@ -6329,14 +7530,14 @@ app.get(["/api/video/embed", "/api/video/embed/:videoId"], async (req: express.R
     if (/pixeldrain\.com/i.test(targetUrl) || (videoId && (videoId.startsWith("pixeldrain_") || videoId.startsWith("pixeldrain:")))) {
       const match = targetUrl.match(/pixeldrain\.com\/(?:u|api\/file|e)\/([a-zA-Z0-9_-]+)/i) || (videoId ? videoId.match(/^pixeldrain[_:]([a-zA-Z0-9_-]+)/i) : null);
       const pixelId = match && match[1] ? match[1] : (videoId || "").replace(/^pixeldrain[_:]/, "");
-      const directStreamUrl = `https://pixeldrain.com/api/file/${pixelId}`;
+      const directStreamUrl = `https://pixeldrain.com/api/file/${encodeURIComponent(pixelId)}`;
       return res.send(`
         <!DOCTYPE html>
         <html lang="ar" dir="rtl">
         <head>
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>مشغل Pixeldrain المحمي - منصة قلب العلم</title>
+          <title>مشغل Pixeldrain المحمي - منصة المتفلسفة </title>
           <style>
             * { box-sizing: border-box; margin: 0; padding: 0; }
             html, body { width: 100%; height: 100%; background: #000; overflow: hidden; display: flex; align-items: center; justify-content: center; }
@@ -6346,8 +7547,8 @@ app.get(["/api/video/embed", "/api/video/embed/:videoId"], async (req: express.R
           ${antiRedirectScript}
         </head>
         <body>
-          <div class="watermark">بث محمي لمنصة قلب العلم</div>
-          <video src="${directStreamUrl}" controls autoplay playsinline controlsList="nodownload nofullscreen noremoteplayback" disablePictureInPicture></video>
+          <div class="watermark">بث محمي لمنصة المتفلسفة </div>
+          <video src="${escapeHtmlAttr(directStreamUrl)}" controls autoplay playsinline controlsList="nodownload nofullscreen noremoteplayback" disablePictureInPicture></video>
         </body>
         </html>
       `);
@@ -6363,7 +7564,7 @@ app.get(["/api/video/embed", "/api/video/embed/:videoId"], async (req: express.R
         <head>
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1">
-          <title>مشغل منصة قلب العلم التعليمية</title>
+          <title>مشغل منصة المتفلسفة  التعليمية</title>
           <style>
             * { box-sizing: border-box; margin: 0; padding: 0; }
             html, body { width: 100%; height: 100%; background: #020617; overflow: hidden; }
@@ -6373,7 +7574,7 @@ app.get(["/api/video/embed", "/api/video/embed/:videoId"], async (req: express.R
         </head>
         <body>
           <iframe
-            src="${embedSrc}"
+            src="${escapeHtmlAttr(embedSrc)}"
             sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-presentation"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
             allowfullscreen
@@ -6400,7 +7601,7 @@ app.get(["/api/video/embed", "/api/video/embed/:videoId"], async (req: express.R
           ${antiRedirectScript}
         </head>
         <body>
-          <iframe src="https://drive.google.com/file/d/${gDriveMatch[1]}/preview" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>
+          <iframe src="https://drive.google.com/file/d/${escapeHtmlAttr(gDriveMatch[1])}/preview" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>
         </body>
         </html>
       `);
@@ -6422,7 +7623,7 @@ app.get(["/api/video/embed", "/api/video/embed/:videoId"], async (req: express.R
           ${antiRedirectScript}
         </head>
         <body>
-          <iframe src="https://player.vimeo.com/video/${vimeoMatch[1]}?autoplay=1&title=0&byline=0&portrait=0" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-presentation" allow="autoplay; fullscreen" allowfullscreen></iframe>
+          <iframe src="https://player.vimeo.com/video/${escapeHtmlAttr(vimeoMatch[1])}?autoplay=1&title=0&byline=0&portrait=0" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-presentation" allow="autoplay; fullscreen" allowfullscreen></iframe>
         </body>
         </html>
       `);
@@ -6449,7 +7650,7 @@ app.get(["/api/video/embed", "/api/video/embed/:videoId"], async (req: express.R
         </head>
         <body>
           <iframe
-            src="${embedTarget}"
+            src="${escapeHtmlAttr(embedTarget)}"
             sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-presentation"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
             allowfullscreen
@@ -6478,8 +7679,8 @@ app.get(["/api/video/embed", "/api/video/embed/:videoId"], async (req: express.R
           ${antiRedirectScript}
         </head>
         <body>
-          <div class="watermark">بث محمي لمنصة قلب العلم</div>
-          <video src="${targetUrl}" controls autoplay playsinline controlsList="nodownload nofullscreen noremoteplayback" disablePictureInPicture></video>
+          <div class="watermark">بث محمي لمنصة المتفلسفة </div>
+          <video src="${escapeHtmlAttr(targetUrl)}" controls autoplay playsinline controlsList="nodownload nofullscreen noremoteplayback" disablePictureInPicture></video>
         </body>
         </html>
       `);
@@ -6501,7 +7702,7 @@ app.get(["/api/video/embed", "/api/video/embed/:videoId"], async (req: express.R
           ${antiRedirectScript}
         </head>
         <body>
-          <iframe src="${embedUrl}" sandbox="allow-scripts allow-same-origin allow-forms allow-presentation" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" referrerpolicy="origin-when-cross-origin"></iframe>
+          <iframe src="${escapeHtmlAttr(embedUrl)}" sandbox="allow-scripts allow-same-origin allow-forms allow-presentation" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" referrerpolicy="origin-when-cross-origin"></iframe>
         </body>
         </html>
       `);
@@ -6521,7 +7722,7 @@ app.get(["/api/video/embed", "/api/video/embed/:videoId"], async (req: express.R
         ${antiRedirectScript}
       </head>
       <body>
-        <iframe src="${targetUrl}" sandbox="allow-scripts allow-same-origin allow-forms allow-presentation" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"></iframe>
+        <iframe src="${escapeHtmlAttr(targetUrl)}" sandbox="allow-scripts allow-same-origin allow-forms allow-presentation" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"></iframe>
       </body>
       </html>
     `);
@@ -7043,9 +8244,15 @@ app.get("/api/video/avcaption-stream", async (req: express.Request, res: express
 app.get("/api/video/avcaption-clean-embed", async (req: express.Request, res: express.Response) => {
   try {
     const rawUrl = typeof req.query.url === "string" ? req.query.url.trim() : "";
+    if (!rawUrl || !isSafePublicUrl(rawUrl)) {
+      return res.status(400).send("رابط الفيديو غير صالح.");
+    }
     const { embedUrl, watchUrl } = normalizeAvcaptionTargetUrl(rawUrl);
     const useMirror = req.query.mirror === "1";
     const targetEmbed = useMirror ? watchUrl : embedUrl;
+    if (!isSafePublicUrl(targetEmbed)) {
+      return res.status(400).send("رابط الفيديو غير مسموح به.");
+    }
 
     const extracted = await extractAvcaptionStreamFromHtml(targetEmbed);
 
@@ -7167,7 +8374,7 @@ app.get("/api/video/avcaption-clean-embed", async (req: express.Request, res: ex
               }
 
               window.parent.postMessage({
-                source: 'qalbalelm_avcaption_bridge',
+                source: 'almotafalsifa_avcaption_bridge',
                 event: eventType || 'timeupdate',
                 currentTime: isFinite(currentTime) ? currentTime : 0,
                 duration: isFinite(duration) && duration > 0 ? duration : 0,
@@ -7200,7 +8407,7 @@ app.get("/api/video/avcaption-clean-embed", async (req: express.Request, res: ex
             if (typeof data === 'string') {
               try { data = JSON.parse(data); } catch (e) { return; }
             }
-            if (data.target !== 'qalbalelm_avcaption_bridge') return;
+            if (data.target !== 'almotafalsifa_avcaption_bridge' && data.target !== 'qalbalelm_avcaption_bridge') return;
 
             var v = getActiveVideoElement();
             var jw = getJwInstance();
@@ -7294,7 +8501,7 @@ app.get("/api/video/avcaption-clean-embed", async (req: express.Request, res: ex
         <head>
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>مشغل منصة قلب العلم الخاص</title>
+          <title>مشغل منصة المتفلسفة  الخاص</title>
           <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
           ${platformControlBridgeScript}
         </head>
@@ -7353,7 +8560,7 @@ app.get("/api/video/avcaption-clean-embed", async (req: express.Request, res: ex
       cleanHtml = cleanHtml.replace(/window\.open\s*\(/gi, "(function(){return null;})(");
 
       const baseOrigin = new URL(extracted.originUrl).origin;
-      const headInjection = `<base href="${baseOrigin}/">${platformControlBridgeScript}`;
+      const headInjection = `<base href="${escapeHtmlAttr(baseOrigin)}/">${platformControlBridgeScript}`;
       if (/<head[^>]*>/i.test(cleanHtml)) {
         cleanHtml = cleanHtml.replace(/<head[^>]*>/i, (m) => `${m}\n${headInjection}`);
       } else {
@@ -7371,7 +8578,7 @@ app.get("/api/video/avcaption-clean-embed", async (req: express.Request, res: ex
       <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>مشغل منصة قلب العلم الخاص</title>
+        <title>مشغل منصة المتفلسفة  الخاص</title>
         ${platformControlBridgeScript}
         <style>
           iframe {
@@ -7385,7 +8592,7 @@ app.get("/api/video/avcaption-clean-embed", async (req: express.Request, res: ex
       <body>
         <iframe
           id="avc-inner-frame"
-          src="${targetEmbed}${targetEmbed.includes("?") ? "&" : "?"}autoplay=1&controls=0"
+          src="${escapeHtmlAttr(`${targetEmbed}${targetEmbed.includes("?") ? "&" : "?"}autoplay=1&controls=0`)}"
           sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
           allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
           referrerpolicy="no-referrer"
@@ -7514,7 +8721,7 @@ app.post("/api/parents/sync-linked-students", verifyFirebaseToken, async (req: A
     const parentUser = {
       id: parentUid, // Real Firebase UID
       name: `ولي أمر (${primaryStudent.name || primaryStudent.firstName || "الطالب"})`,
-      email: (req.user as any)?.email || `parent_${parentUid.slice(0, 8)}@qalbalelm.internal`,
+      email: (req.user as any)?.email || `parent_${parentUid.slice(0, 8)}@al-motafalsifa.internal`,
       phone: cleanPhone,
       parentPhone: cleanPhone,
       role: "parent",
@@ -7551,28 +8758,16 @@ app.post("/api/parents/student-details", verifyFirebaseToken, async (req: Authen
     }
 
     const safeDb = getSafeFirestore();
+    const isStaff = isStaffUser(req.user);
 
-    // Verify relationship strictly
-    const isAdm = (req.user as any)?.admin === true || (req.user as any)?.role === "admin";
-    if (safeDb && !isAdm) {
-      try {
-        const parentDoc = await safeDb.collection("parents").doc(parentUid).get();
-        if (parentDoc.exists) {
-          const linkedStudentIds = parentDoc.data()?.linkedStudentIds || [];
-          if (!linkedStudentIds.includes(studentId)) {
-            return res.status(403).json({ error: "غير مصرح: ليس لديك إذن للاطلاع على بيانات هذا الطالب." });
-          }
-        }
-      } catch (e) {}
-    }
-
-    // Fetch verified student doc
-    let studentData: any = null;
-    if (safeDb) {
+    // Fetch student doc (disk first or Firestore)
+    let studentData: any = readDiskUsers().find((u: any) => u && u.id === studentId && isBelongingToMotafalsifa(u)) || null;
+    if (!studentData && safeDb) {
       try {
         const studentDoc = await safeDb.collection("users").doc(studentId).get();
         if (studentDoc.exists) {
-          studentData = { id: studentDoc.id, ...studentDoc.data() };
+          const data = { id: studentDoc.id, ...studentDoc.data() };
+          if (isBelongingToMotafalsifa(data)) studentData = data;
         }
       } catch (e) {}
     }
@@ -7581,13 +8776,46 @@ app.post("/api/parents/student-details", verifyFirebaseToken, async (req: Authen
       try {
         const usersList = await fetchPlatformUsersFromFirestore();
         if (Array.isArray(usersList)) {
-          studentData = usersList.find((u: any) => u.id === studentId) || null;
+          studentData = usersList.find((u: any) => u.id === studentId && isBelongingToMotafalsifa(u)) || null;
         }
       } catch (e) {}
     }
 
     if (!studentData) {
       return res.status(404).json({ error: "بيانات الطالب غير موجودة." });
+    }
+
+    // Verify relationship strictly even when safeDb is absent!
+    if (!isStaff && req.user?.uid !== studentId) {
+      let authorized = false;
+      if (safeDb) {
+        try {
+          const parentDoc = await safeDb.collection("parents").doc(parentUid).get();
+          if (parentDoc.exists) {
+            const linkedStudentIds = parentDoc.data()?.linkedStudentIds || [];
+            if (Array.isArray(linkedStudentIds) && linkedStudentIds.includes(studentId)) {
+              authorized = true;
+            }
+          }
+        } catch {}
+      }
+      if (!authorized) {
+        const rawUserPhone = (req.user as any)?.phone_number || (req.user as any)?.phone || "";
+        const normParentPhone = String(rawUserPhone).replace(/\D/g, "").replace(/^20/, "0");
+        const candidatePhones = [
+          studentData.parentPhone,
+          studentData.fatherPhone,
+          studentData.motherPhone,
+        ]
+          .filter(Boolean)
+          .map((p: any) => String(p).replace(/\D/g, "").replace(/^20/, "0"));
+        if (normParentPhone && candidatePhones.some((cp) => cp && (cp === normParentPhone || cp.endsWith(normParentPhone.slice(-10))))) {
+          authorized = true;
+        }
+      }
+      if (!authorized) {
+        return res.status(403).json({ error: "غير مصرح: ليس لديك إذن للاطلاع على بيانات هذا الطالب." });
+      }
     }
 
     // Fetch verified submissions for this student
@@ -7604,7 +8832,7 @@ app.post("/api/parents/student-details", verifyFirebaseToken, async (req: Authen
 
     res.json({
       success: true,
-      student: studentData,
+      student: sanitizeUserForClient(studentData),
       submissions,
     });
   } catch (err: any) {
@@ -7627,18 +8855,9 @@ try {
 // ----------------------------------------------------------------------------
 // API: Secure Student Exam Submission & Server-Side Verification
 // ----------------------------------------------------------------------------
-app.post("/api/exams/submit", async (req: AuthenticatedRequest, res) => {
+app.post("/api/exams/submit", verifyFirebaseToken, async (req: AuthenticatedRequest, res) => {
   try {
-    // Optionally extract token user if present, or fall back to studentId from body
-    let tokenUser: any = null;
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      const token = authHeader.split("Bearer ")[1]?.trim();
-      if (token) {
-        tokenUser = decodeJwtPayloadUnsafe(token);
-      }
-    }
-
+    const tokenUser = req.user!;
     const {
       examId,
       courseId,
@@ -7659,31 +8878,29 @@ app.post("/api/exams/submit", async (req: AuthenticatedRequest, res) => {
       essayAnswerImages,
       essayAnswerAudio,
       essayAnswerTranscripts,
-      essayGrades,
       attemptNumber,
       priorAttemptsCount,
       maxAttempts,
       durationTakenSeconds,
-      clientTotalScore,
-      clientMaxScore,
       passingPercentage,
-      questions: clientQuestions,
     } = req.body;
 
-    const studentUid = bodyStudentId || tokenUser?.uid || `student_${Date.now()}`;
+    const studentUid = bodyStudentId || tokenUser.uid;
+    if (!isStaffUser(tokenUser) && studentUid !== tokenUser.uid) {
+      return res.status(403).json({ error: "غير مصرح: لا يمكنك تسليم امتحان نيابةً عن طالب آخر." });
+    }
     if (!examId) {
       return res.status(400).json({ error: "بيانات تسليم الامتحان غير مكتملة." });
     }
 
     let studentName =
       bodyStudentName ||
-      tokenUser?.name ||
-      tokenUser?.displayName ||
-      tokenUser?.email ||
-      "طالب منصة قلب العلم";
-    let studentPhone = bodyStudentPhone || tokenUser?.phone_number || "";
+      tokenUser.name ||
+      tokenUser.email ||
+      "طالب منصة المتفلسفة ";
+    let studentPhone = bodyStudentPhone || tokenUser.phone_number || "";
     let parentPhone = bodyParentPhone || "";
-    let studentSchoolYear = bodyStudentSchoolYear || "الصف الثالث الثانوي";
+    let studentSchoolYear = bodyStudentSchoolYear || "الصف الأول الثانوي";
 
     // Also enrich from local disk users if available
     const diskUsers = readDiskUsers();
@@ -7768,7 +8985,7 @@ app.post("/api/exams/submit", async (req: AuthenticatedRequest, res) => {
     }
 
     // ------------------------------------------------------------------------
-    // Search Exam Definition for Verification & Grading
+    // Search Authoritative Exam Definition on Server (Never trust client answers/scores)
     // ------------------------------------------------------------------------
     let matchedExam = findExamLocally(examId, courseId);
 
@@ -7807,67 +9024,59 @@ app.post("/api/exams/submit", async (req: AuthenticatedRequest, res) => {
       }
     }
 
-    // Determine questions to grade
-    const questionsToGrade: any[] =
-      matchedExam && Array.isArray(matchedExam.questions) && matchedExam.questions.length > 0
-        ? matchedExam.questions
-        : Array.isArray(clientQuestions) && clientQuestions.length > 0
-          ? clientQuestions
-          : [];
+    if (!matchedExam || !Array.isArray(matchedExam.questions) || matchedExam.questions.length === 0) {
+      return res.status(404).json({ error: "تعذر العثور على نموذج الامتحان المعتمد على الخادم للتصحيح." });
+    }
+
+    const questionsToGrade: any[] = matchedExam.questions;
+    const questionSolutions: Record<string, any> = {};
 
     let mcqScore = 0;
     let totalPossibleMcq = 0;
-    let essayScore = 0;
     let totalPossibleEssay = 0;
+    const essayScore = 0;
 
-    if (questionsToGrade.length > 0) {
-      questionsToGrade.forEach((q: any, idx: number) => {
-        const qId = String(q.id || `q_${idx}`);
-        const qMarks = Number(q.marks) > 0 ? Number(q.marks) : 10;
-        const isMCQ =
-          q.type === "mcq" || (!q.type && Array.isArray(q.options) && q.options.length > 0);
+    questionsToGrade.forEach((q: any, idx: number) => {
+      const qId = String(q.id || `q_${idx}`);
+      const qMarks = Number(q.marks) > 0 ? Number(q.marks) : 10;
+      const isMCQ =
+        q.type === "mcq" || (!q.type && Array.isArray(q.options) && q.options.length > 0);
 
-        if (isMCQ) {
-          totalPossibleMcq += qMarks;
-          const studentAnswer = mcqAnswers?.[qId] ?? mcqAnswers?.[q.id] ?? mcqAnswers?.[`q_${idx}`];
-          const correctOpt = q.correctOptionIndex;
-          if (
-            studentAnswer !== undefined &&
-            studentAnswer !== null &&
-            correctOpt !== undefined &&
-            correctOpt !== null &&
-            Number(studentAnswer) === Number(correctOpt)
-          ) {
-            mcqScore += qMarks;
-          }
-        } else {
-          totalPossibleEssay += qMarks;
-          // SECURITY: Never accept essayGrades from student exam submission; essay marks are strictly graded by teachers in /api/teacher/grade-essay
+      questionSolutions[qId] = {
+        correctOptionIndex: q.correctOptionIndex,
+        modelAnswer: q.modelAnswer,
+        modelAnswerImage: q.modelAnswerImage,
+        rubricCriteria: q.rubricCriteria,
+        explanation: q.explanation,
+      };
+
+      if (isMCQ) {
+        totalPossibleMcq += qMarks;
+        const studentAnswer = mcqAnswers?.[qId] ?? mcqAnswers?.[q.id] ?? mcqAnswers?.[`q_${idx}`];
+        const correctOpt = q.correctOptionIndex;
+        if (
+          studentAnswer !== undefined &&
+          studentAnswer !== null &&
+          correctOpt !== undefined &&
+          correctOpt !== null &&
+          Number(studentAnswer) === Number(correctOpt)
+        ) {
+          mcqScore += qMarks;
         }
-      });
-    }
+      } else {
+        totalPossibleEssay += qMarks;
+        // SECURITY: Never accept essayGrades from student exam submission; essay marks are strictly graded by teachers in /api/teacher/grade-essay
+      }
+    });
 
-    // Fallback: If questions couldn't be loaded on server, use client validated marks safely
-    const hasCalculatedQuestions = totalPossibleMcq + totalPossibleEssay > 0;
-    const finalTotalScore = hasCalculatedQuestions
-      ? mcqScore + essayScore
-      : typeof clientTotalScore === "number" && !isNaN(clientTotalScore)
-        ? Math.max(0, clientTotalScore)
-        : mcqScore;
-
-    const finalMaxScore = hasCalculatedQuestions
-      ? totalPossibleMcq + totalPossibleEssay
-      : typeof clientMaxScore === "number" && !isNaN(clientMaxScore) && clientMaxScore > 0
-        ? clientMaxScore
-        : 100;
+    const finalTotalScore = mcqScore + essayScore;
+    const finalMaxScore = totalPossibleMcq + totalPossibleEssay > 0 ? totalPossibleMcq + totalPossibleEssay : 100;
 
     const hasEssayQuestions =
       totalPossibleEssay > 0 ||
-      Boolean(req.body?.hasEssayQuestions) ||
       (essayAnswers && Object.keys(essayAnswers).length > 0) ||
       (essayAnswerImages && Object.keys(essayAnswerImages).length > 0);
-    const submissionStatus: "under_review" | "graded" =
-      req.body?.status === "under_review" || hasEssayQuestions ? "under_review" : "graded";
+    const submissionStatus: "under_review" | "graded" = hasEssayQuestions ? "under_review" : "graded";
 
     const finalPercentage =
       finalMaxScore > 0 ? Math.round((finalTotalScore / finalMaxScore) * 100) : 0;
@@ -7891,7 +9100,7 @@ app.post("/api/exams/submit", async (req: AuthenticatedRequest, res) => {
       courseId: courseId || "",
       courseTitle: courseTitle || "كورس تعليمي",
       lessonTitle: lessonTitle || "درس امتحاني",
-      examTitle: examTitle || "اختبار منصة قلب العلم",
+      examTitle: examTitle || matchedExam.title || "اختبار منصة المتفلسفة ",
       studentId: studentUid,
       studentName,
       studentPhone,
@@ -7902,7 +9111,7 @@ app.post("/api/exams/submit", async (req: AuthenticatedRequest, res) => {
       essayAnswerImages: compressedEssayImages || {},
       essayAnswerAudio: essayAnswerAudio || {},
       essayAnswerTranscripts: essayAnswerTranscripts || {},
-      essayGrades: essayGrades || {},
+      essayGrades: {},
       status: submissionStatus,
       passingPercentage: effectivePassingPct,
       attemptNumber: attemptNumber || currentAttemptIndex,
@@ -7983,6 +9192,7 @@ app.post("/api/exams/submit", async (req: AuthenticatedRequest, res) => {
     return res.json({
       success: true,
       submission: submissionData,
+      questionSolutions,
       totalScore: finalTotalScore,
       maxScore: finalMaxScore,
       percentage: finalPercentage,
@@ -7998,18 +9208,68 @@ app.post("/api/exams/submit", async (req: AuthenticatedRequest, res) => {
 });
 
 // ----------------------------------------------------------------------------
+// API: Fetch Exam Review Solutions (ONLY after student submits or for Staff)
+// ----------------------------------------------------------------------------
+app.get("/api/exams/:examId/review-solutions", verifyFirebaseToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { examId } = req.params;
+    const courseId = typeof req.query.courseId === "string" ? req.query.courseId : undefined;
+    const staff = isStaffUser(req.user);
+
+    if (!staff) {
+      const uid = req.user?.uid;
+      const hasInMem = Array.from(inMemorySubmissionsStore.values()).some(
+        (s: any) => s && s.examId === examId && s.studentId === uid
+      );
+      const hasOnDisk = readDiskSubmissions().some(
+        (s: any) => s && s.examId === examId && s.studentId === uid
+      );
+      const userObj = readDiskUsers().find((u: any) => u && u.id === uid);
+      const hasInProfile = Boolean(userObj?.examResults?.[examId]);
+      if (!hasInMem && !hasOnDisk && !hasInProfile) {
+        return res.status(403).json({ error: "غير مصرح: نموذج الإجابة متاح فقط بعد تسليم الامتحان." });
+      }
+    }
+
+    const matchedExam = findExamLocally(examId, courseId);
+    if (!matchedExam || !Array.isArray(matchedExam.questions)) {
+      return res.json({ success: true, questionSolutions: {} });
+    }
+
+    const questionSolutions: Record<string, any> = {};
+    matchedExam.questions.forEach((q: any, idx: number) => {
+      const qId = String(q.id || `q_${idx}`);
+      questionSolutions[qId] = {
+        correctOptionIndex: q.correctOptionIndex,
+        modelAnswer: q.modelAnswer,
+        modelAnswerImage: q.modelAnswerImage,
+        rubricCriteria: q.rubricCriteria,
+        explanation: q.explanation,
+      };
+    });
+
+    return res.json({ success: true, questionSolutions });
+  } catch (err: any) {
+    return res.status(500).json({ error: "تعذر استرجاع نموذج الحل." });
+  }
+});
+
+// ----------------------------------------------------------------------------
 // API: Get & Save Exam Submissions (for Teacher Essay Grading & Reports)
 // ----------------------------------------------------------------------------
-app.get("/api/submissions", async (_req, res) => {
+app.get("/api/submissions", verifyFirebaseToken, async (req: AuthenticatedRequest, res) => {
   try {
     const diskSubs = readDiskSubmissions();
-    return res.json({ success: true, submissions: diskSubs });
+    const submissions = isStaffUser(req.user)
+      ? diskSubs
+      : diskSubs.filter((s: any) => s && s.studentId === req.user?.uid);
+    return res.json({ success: true, submissions });
   } catch (err: any) {
     return res.json({ success: true, submissions: [] });
   }
 });
 
-app.post("/api/submissions/save", async (req, res) => {
+app.post("/api/submissions/save", verifyFirebaseToken, requireRestrictedTeacher, async (req: AuthenticatedRequest, res) => {
   try {
     const incoming = Array.isArray(req.body?.submissions) ? req.body.submissions : [];
     if (incoming.length === 0) {
@@ -8262,7 +9522,7 @@ app.all("/api/daily-boost", verifyFirebaseToken, rateLimiter(20, 5 * 60 * 1000),
     const prompt = `
 قدم رسالة تحفيزية ودعم نفسي ملهم وقصير لطالب/طالبة دفعة 2027 (الاسم: ${sanitizeTextInput(studentName, 50)}) الذي يشعر بـ: "${sanitizeTextInput(currentMood, 200)}".
 كن مشجعاً جداً، إيجابياً، ومحفزاً لتقليل التوتر وبث الثقة، واختم الرسالة بتوقيع:
-"مع تحيات منصة قلب العلم التعليمية - إشراف إدارة المنصة 🌟".
+"مع تحيات منصة المتفلسفة  التعليمية - إشراف إدارة المنصة 🌟".
     `.trim();
 
     const response = await ai.models.generateContent({
@@ -8296,7 +9556,7 @@ app.post("/api/analyze-book", verifyFirebaseToken, rateLimiter(10, 5 * 60 * 1000
     const ai = getAI();
 
     const systemPrompt = `
-أنت خبير مناهج تعليمية ومحلل كتب دراسية متخصص لمنصة قلب العلم التعليمية (إشراف إدارة المنصة).
+أنت خبير مناهج تعليمية ومحلل كتب دراسية متخصص لمنصة المتفلسفة  التعليمية (إشراف إدارة المنصة).
 مهمتك: تحليل محتوى الكتاب المدرسي / الملزمة واستخراج قائمة دقيقة وشاملة بجميع الدروس والوحدات الواردة في الكتاب.
 
 يجب أن ترجع استجابتك بتنسيق JSON حصراً بالمخطط التالي:
@@ -8539,7 +9799,7 @@ app.post("/api/grade-essay-answer", verifyFirebaseToken, rateLimiter(25, 5 * 60 
 
     const ai = getAI();
     const gradingPrompt = `
-أنت مصحح امتحانات خبير ومسؤول عن التصحيح الفوري وسلم الدرجات لمنصة قلب العلم التعليمية (إشراف إدارة المنصة).
+أنت مصحح امتحانات خبير ومسؤول عن التصحيح الفوري وسلم الدرجات لمنصة المتفلسفة  التعليمية (إشراف إدارة المنصة).
 مهمتك: تقييم إجابة الطالب المقالية بموضوعية وعدل وتشجيع بناءً على الحل النموذجي المعتمد وسلّم التصحيح.
 
 [بيانات السؤال]:
@@ -8710,8 +9970,8 @@ app.post("/api/coupons/validate", rateLimiter(40, 5 * 60 * 1000), async (req, re
   }
 });
 
-// API: List All Coupons (Admin)
-app.get("/api/coupons", (req, res) => {
+// API: List All Coupons (Staff)
+app.get("/api/coupons", verifyFirebaseToken, requireRestrictedTeacher, (_req, res) => {
   try {
     const couponsList = Array.from(couponsStore.values());
     res.json({ coupons: couponsList });
@@ -8720,8 +9980,8 @@ app.get("/api/coupons", (req, res) => {
   }
 });
 
-// API: Create New Coupon (Admin)
-app.post("/api/coupons", async (req, res) => {
+// API: Create New Coupon (Staff)
+app.post("/api/coupons", verifyFirebaseToken, requireRestrictedTeacher, async (req, res) => {
   try {
     const { code, discountType, discountValue, maxUses, courseIds, minCoursePrice, expiresAt, note } = req.body;
     const cleanCode = (code || "").trim().toUpperCase();
@@ -8765,8 +10025,8 @@ app.post("/api/coupons", async (req, res) => {
   }
 });
 
-// API: Toggle Coupon Status (Admin)
-app.patch("/api/coupons/:code/toggle", async (req, res) => {
+// API: Toggle Coupon Status (Staff)
+app.patch("/api/coupons/:code/toggle", verifyFirebaseToken, requireRestrictedTeacher, async (req, res) => {
   try {
     const targetCode = (req.params.code || "").trim().toUpperCase();
     const coupon = couponsStore.get(targetCode);
@@ -8789,8 +10049,8 @@ app.patch("/api/coupons/:code/toggle", async (req, res) => {
   }
 });
 
-// API: Delete Coupon (Admin)
-app.delete("/api/coupons/:code", async (req, res) => {
+// API: Delete Coupon (Staff)
+app.delete("/api/coupons/:code", verifyFirebaseToken, requireRestrictedTeacher, async (req, res) => {
   try {
     const targetCode = (req.params.code || "").trim().toUpperCase();
     const coupon = couponsStore.get(targetCode);
@@ -8810,7 +10070,7 @@ app.delete("/api/coupons/:code", async (req, res) => {
 });
 
 // API: Create Fawaterak Invoice
-app.post("/api/fawaterak/create-invoice", rateLimiter(20, 5 * 60 * 1000), async (req, res) => {
+app.post("/api/fawaterak/create-invoice", verifyFirebaseToken, rateLimiter(20, 5 * 60 * 1000), async (req: AuthenticatedRequest, res) => {
   try {
     const {
       courseId,
@@ -8828,16 +10088,26 @@ app.post("/api/fawaterak/create-invoice", rateLimiter(20, 5 * 60 * 1000), async 
       return res.status(400).json({ error: "معرف الكورس (courseId) مطلوب." });
     }
 
-    if (!studentId) {
+    const effectiveStudentId = studentId || req.user?.uid;
+    if (!effectiveStudentId) {
       return res.status(400).json({ error: "الرجاء تسجيل الدخول أو إدخال بيانات الطالب للاشتراك." });
     }
+    if (!isStaffUser(req.user) && req.user?.uid !== effectiveStudentId) {
+      return res.status(403).json({ error: "غير مصرح: لا يمكنك إنشاء فاتورة لحساب آخر." });
+    }
+
+    const authCourse = await getAuthoritativeCourseFromDB(
+      courseId,
+      Number(coursePrice) || 0,
+      courseTitle || "كورس تعليمي معتمد"
+    );
 
     const result = await createFawaterakInvoice({
       courseId,
-      courseTitle: courseTitle || "كورس تعليمي معتمد",
-      coursePrice: Number(coursePrice) || 0,
-      studentId,
-      studentName: studentName || "طالب المنصة",
+      courseTitle: authCourse.title,
+      coursePrice: authCourse.price,
+      studentId: effectiveStudentId,
+      studentName: studentName || req.user?.name || "طالب المنصة",
       studentPhone: studentPhone || "",
       studentEmail,
       couponCode,
@@ -8852,27 +10122,17 @@ app.post("/api/fawaterak/create-invoice", rateLimiter(20, 5 * 60 * 1000), async 
   }
 });
 
-// API: Fawaterak Webhook (IPN) & Notification Endpoint
+// API: Fawaterak Webhook (IPN) & Notification Endpoint (Fail-Closed Signature Check)
 app.all("/api/fawaterak/webhook", async (req, res) => {
   try {
-    console.log("[Fawaterak Webhook] Received IPN:", {
-      method: req.method,
-      query: req.query,
-      body: req.body,
-      headers: {
-        "x-fawaterak-signature": req.headers["x-fawaterak-signature"],
-        "content-type": req.headers["content-type"],
-      },
-    });
-
     const payload = req.method === "GET" ? req.query : req.body;
     const signature = req.headers["x-fawaterak-signature"] as string | undefined;
 
-    // Verify Hash signature
+    // Verify Hash signature (Fail-Closed!)
     const isValid = verifyWebhookSignature(payload, signature);
     if (!isValid) {
-      console.warn("[Fawaterak Webhook] Invalid signature warning for payload:", payload);
-      // In production log warning, continue if invoice_status is paid
+      console.warn("[Fawaterak Webhook] Rejected request with invalid or missing signature.");
+      return res.status(403).json({ success: false, error: "توقيع فواتيرك (Signature) غير صالح أو مفقود." });
     }
 
     // Extract invoice status and identifiers
@@ -8891,7 +10151,6 @@ app.all("/api/fawaterak/webhook", async (req, res) => {
       // Look up invoice from local cache or firestore
       let invoice = invoicesStore.get(String(invoiceId));
       if (!invoice) {
-        // Try looking up in Firestore
         const safeDb = getSafeFirestore();
         if (safeDb) {
           try {
@@ -9033,7 +10292,7 @@ app.all("/api/fawaterak/hash-verify", async (req, res) => {
       status: "hash_active",
       verified: isVerified,
       algorithm: "SHA256",
-      platform: "qalbalelm.web.app",
+      platform: "motafalsifa.vercel.app",
       timestamp: new Date().toISOString(),
     });
   } catch (err: any) {
@@ -9048,9 +10307,31 @@ app.all("/api/fawaterak/callback", async (req, res) => {
   const courseId = query.courseId || query.course_id;
   const status = String(query.invoice_status || query.status || "").toLowerCase();
 
+  // SECURITY: Never trust query.status=paid blindly from browser redirect! Verify with Fawaterak API or existing paid webhook invoice
   if (status === "paid" && invoiceId && courseId) {
     const invoice = invoicesStore.get(String(invoiceId));
-    if (invoice?.studentId) {
+    let serverConfirmedPaid = invoice?.status === "paid";
+
+    if (!serverConfirmedPaid && FAWATERAK_CONFIG.providerKey) {
+      try {
+        const fwVerify = await axios.get(
+          `https://app.fawaterk.com/api/v2/getInvoiceData/${encodeURIComponent(String(invoiceId))}`,
+          {
+            headers: {
+              Authorization: `Bearer ${FAWATERAK_CONFIG.providerKey}`,
+              "Content-Type": "application/json",
+            },
+            timeout: 8000,
+          }
+        );
+        const remoteStatus = String(fwVerify.data?.data?.invoice_status || fwVerify.data?.data?.status || "").toLowerCase();
+        if (remoteStatus === "paid" || remoteStatus === "success") {
+          serverConfirmedPaid = true;
+        }
+      } catch {}
+    }
+
+    if (serverConfirmedPaid && invoice?.studentId) {
       await unlockCourseForStudent({
         studentId: invoice.studentId,
         studentName: invoice.studentName,
@@ -9102,7 +10383,7 @@ app.get("/api/fawaterak/check-status", async (req, res) => {
 });
 
 // API: List Fawaterak Invoices (Admin)
-app.get("/api/fawaterak/invoices", (req, res) => {
+app.get("/api/fawaterak/invoices", verifyFirebaseToken, requireAdmin, (_req, res) => {
   try {
     const invoicesList = Array.from(invoicesStore.values()).sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
@@ -9113,22 +10394,226 @@ app.get("/api/fawaterak/invoices", (req, res) => {
   }
 });
 
-// API: Fawaterak Gateway Activation URLs & Config
-app.get("/api/fawaterak/activation-info", (req, res) => {
+// API: Weekly Course Sales & Revenue Breakdown (Admin Technical Support Only)
+app.get("/api/admin/weekly-sales", verifyFirebaseToken, requireAdmin, (_req, res) => {
+  try {
+    const courses = readDiskCourses();
+    const courseById = new Map<string, any>();
+    for (const c of courses) {
+      if (c && c.id) courseById.set(String(c.id), c);
+    }
+
+    const diskUsers = readDiskUsers();
+    const userById = new Map<string, any>();
+    for (const u of diskUsers) {
+      if (u && u.id) userById.set(String(u.id), u);
+    }
+
+    type SaleTx = {
+      id: string;
+      studentId: string;
+      studentName: string;
+      studentPhone: string;
+      courseId: string;
+      courseTitle: string;
+      amount: number;
+      dateIso: string;
+      source: "wallet_gateway" | "fawaterak" | "access_code" | "manual_enrollment";
+      sourceLabel: string;
+    };
+
+    const transactions: SaleTx[] = [];
+    const coveredKeys = new Set<string>();
+
+    const parseSafeDate = (raw?: any): string => {
+      if (!raw) return new Date().toISOString();
+      const d = new Date(raw);
+      if (!Number.isNaN(d.getTime())) return d.toISOString();
+      return new Date().toISOString();
+    };
+
+    // 1. Completed Wallet Gateway Orders (Vodafone Cash / Automated SMS)
+    for (const o of ordersStore.values()) {
+      const st = String(o.status || "").toLowerCase();
+      if (st !== "completed" && st !== "approved" && st !== "paid") continue;
+      const cid = String(o.courseId || "");
+      const sid = String(o.studentId || "");
+      const courseObj = courseById.get(cid);
+      const userObj = userById.get(sid);
+      const amount = Math.max(0, Number(o.finalAmount ?? (o as any).amount ?? courseObj?.price ?? 0));
+      const dateIso = parseSafeDate((o as any).completedAt || (o as any).approvedAt || o.createdAt);
+      const key = `${sid}::${cid}`;
+      coveredKeys.add(key);
+      transactions.push({
+        id: `wg_${o.id}`,
+        studentId: sid,
+        studentName: o.studentName || userObj?.name || "طالب",
+        studentPhone: o.studentPhone || userObj?.phone || "",
+        courseId: cid,
+        courseTitle: o.courseTitle || courseObj?.title || "كورس تعليمي",
+        amount,
+        dateIso,
+        source: "wallet_gateway",
+        sourceLabel: "فودافون كاش",
+      });
+    }
+
+    // 2. Paid Fawaterak Invoices
+    for (const inv of invoicesStore.values()) {
+      const st = String(inv.status || "").toLowerCase();
+      if (st !== "paid") continue;
+      const cid = String(inv.courseId || "");
+      const sid = String(inv.studentId || "");
+      const key = `${sid}::${cid}`;
+      if (coveredKeys.has(key)) continue;
+      coveredKeys.add(key);
+      const courseObj = courseById.get(cid);
+      const userObj = userById.get(sid);
+      const amount = Math.max(0, Number(inv.finalAmount ?? (inv as any).amount ?? courseObj?.price ?? 0));
+      const dateIso = parseSafeDate((inv as any).paidAt || inv.createdAt);
+      transactions.push({
+        id: `fw_${inv.id}`,
+        studentId: sid,
+        studentName: inv.studentName || userObj?.name || "طالب",
+        studentPhone: inv.studentPhone || userObj?.phone || "",
+        courseId: cid,
+        courseTitle: inv.courseTitle || courseObj?.title || "كورس تعليمي",
+        amount,
+        dateIso,
+        source: "fawaterak",
+        sourceLabel: "دفع إلكتروني (فواتيرك)",
+      });
+    }
+
+    // 3. Used Access Codes
+    const accessCodes = loadServerAccessCodes();
+    for (const code of accessCodes) {
+      if (!code || !code.isUsed) continue;
+      const cid = String(code.courseId || "");
+      const sid = String(code.usedByStudentId || "");
+      const key = `${sid}::${cid}`;
+      if (sid && cid && coveredKeys.has(key)) continue;
+      if (sid && cid) coveredKeys.add(key);
+      const courseObj = courseById.get(cid);
+      const userObj = sid ? userById.get(sid) : null;
+      const amount = Math.max(0, Number(code.price ?? courseObj?.price ?? 0));
+      const dateIso = parseSafeDate(code.usedAt || code.createdAt);
+      transactions.push({
+        id: `ac_${code.code}`,
+        studentId: sid,
+        studentName: code.usedByStudentName || userObj?.name || "طالب بكود تفعيل",
+        studentPhone: code.usedByStudentPhone || userObj?.phone || "",
+        courseId: cid,
+        courseTitle: code.courseTitle || courseObj?.title || "كورس تعليمي",
+        amount,
+        dateIso,
+        source: "access_code",
+        sourceLabel: "كود تفعيل كورس",
+      });
+    }
+
+    // 4. Enrolled courses on student accounts not yet covered by an explicit gateway/code order
+    for (const u of diskUsers) {
+      if (!u || u.role === "admin" || u.role === "teacher" || u.role === "assistant" || u.isAssistant) continue;
+      const enrolled: string[] = Array.isArray(u.enrolledCourseIds) ? u.enrolledCourseIds : [];
+      for (const cid of enrolled) {
+        const key = `${u.id}::${cid}`;
+        if (coveredKeys.has(key)) continue;
+        coveredKeys.add(key);
+        const courseObj = courseById.get(String(cid));
+        if (!courseObj) continue;
+        const amount = Math.max(0, Number(courseObj.price ?? 0));
+        const dateIso = parseSafeDate(u.updatedAt || u.registeredAt);
+        transactions.push({
+          id: `enr_${u.id}_${cid}`,
+          studentId: String(u.id),
+          studentName: u.name || "طالب",
+          studentPhone: u.phone || "",
+          courseId: String(cid),
+          courseTitle: courseObj.title || "كورس تعليمي",
+          amount,
+          dateIso,
+          source: "manual_enrollment",
+          sourceLabel: "تفعيل مباشر / اشتراك مسجل",
+        });
+      }
+    }
+
+    // Group transactions by Saturday–Friday Egyptian academic week
+    const getWeekBounds = (iso: string) => {
+      const d = new Date(iso);
+      const day = d.getDay(); // 0=Sun..6=Sat
+      const diffToSat = (day + 1) % 7; // Sat->0, Sun->1, Fri->6
+      const start = new Date(d.getFullYear(), d.getMonth(), d.getDate() - diffToSat, 0, 0, 0, 0);
+      const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6, 23, 59, 59, 999);
+      const startKey = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}-${String(start.getDate()).padStart(2, "0")}`;
+      const endKey = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, "0")}-${String(end.getDate()).padStart(2, "0")}`;
+      return { weekKey: startKey, weekStart: startKey, weekEnd: endKey, sortTime: start.getTime() };
+    };
+
+    const weekMap = new Map<
+      string,
+      {
+        weekKey: string;
+        weekStart: string;
+        weekEnd: string;
+        sortTime: number;
+        coursesSold: number;
+        totalRevenue: number;
+        transactions: SaleTx[];
+      }
+    >();
+
+    transactions.sort((a, b) => new Date(b.dateIso).getTime() - new Date(a.dateIso).getTime());
+
+    for (const tx of transactions) {
+      const wb = getWeekBounds(tx.dateIso);
+      const existing = weekMap.get(wb.weekKey) || {
+        weekKey: wb.weekKey,
+        weekStart: wb.weekStart,
+        weekEnd: wb.weekEnd,
+        sortTime: wb.sortTime,
+        coursesSold: 0,
+        totalRevenue: 0,
+        transactions: [],
+      };
+      existing.coursesSold += 1;
+      existing.totalRevenue += tx.amount;
+      existing.transactions.push(tx);
+      weekMap.set(wb.weekKey, existing);
+    }
+
+    const weeks = Array.from(weekMap.values()).sort((a, b) => b.sortTime - a.sortTime);
+    const totalCoursesSold = transactions.length;
+    const totalRevenue = transactions.reduce((sum, t) => sum + t.amount, 0);
+
+    res.json({
+      totalCoursesSold,
+      totalRevenue,
+      weeks,
+      transactions,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || "فشل حساب تقرير المبيعات الأسبوعية." });
+  }
+});
+
+// API: Fawaterak Gateway Activation URLs & Config (Admin)
+app.get("/api/fawaterak/activation-info", verifyFirebaseToken, requireAdmin, (req, res) => {
   const currentBase = getAppBaseUrl(req);
   return res.json({
-    platformUrl: "https://qalbalelm.web.app",
+    platformUrl: "https://motafalsifa.vercel.app",
     currentOriginUrl: currentBase,
     urls: {
-      successCallback: "https://qalbalelm.web.app/api/fawaterak/callback?status=paid",
-      pendingCallback: "https://qalbalelm.web.app/api/fawaterak/callback?status=pending",
-      failedCallback: "https://qalbalelm.web.app/api/fawaterak/callback?status=failed",
-      paidWebhook: "https://qalbalelm.web.app/api/fawaterak/webhook",
-      cancellationWebhook: "https://qalbalelm.web.app/api/fawaterak/cancel",
-      refundWebhook: "https://qalbalelm.web.app/api/fawaterak/refund",
-      failedWebhook: "https://qalbalelm.web.app/api/fawaterak/failed",
-      hashVerifyWebhook: "https://qalbalelm.web.app/api/fawaterak/hash-verify",
-      checkStatus: "https://qalbalelm.web.app/api/fawaterak/check-status",
+      successCallback: "https://motafalsifa.vercel.app/api/fawaterak/callback?status=paid",
+      pendingCallback: "https://motafalsifa.vercel.app/api/fawaterak/callback?status=pending",
+      failedCallback: "https://motafalsifa.vercel.app/api/fawaterak/callback?status=failed",
+      paidWebhook: "https://motafalsifa.vercel.app/api/fawaterak/webhook",
+      cancellationWebhook: "https://motafalsifa.vercel.app/api/fawaterak/cancel",
+      refundWebhook: "https://motafalsifa.vercel.app/api/fawaterak/refund",
+      failedWebhook: "https://motafalsifa.vercel.app/api/fawaterak/failed",
+      hashVerifyWebhook: "https://motafalsifa.vercel.app/api/fawaterak/hash-verify",
+      checkStatus: "https://motafalsifa.vercel.app/api/fawaterak/check-status",
     },
     config: {
       isKeyConfigured: Boolean(FAWATERAK_CONFIG.hashKey && FAWATERAK_CONFIG.hashKey.length > 10),
@@ -9144,7 +10629,7 @@ app.get("/api/fawaterak/activation-info", (req, res) => {
 });
 
 // API: Update Fawaterak Keys (Admin)
-app.post("/api/fawaterak/update-keys", (req, res) => {
+app.post("/api/fawaterak/update-keys", verifyFirebaseToken, requireAdmin, (req, res) => {
   try {
     const { hashKey, providerKey } = req.body || {};
     const updated = updateFawaterakConfig(hashKey, providerKey);
@@ -9181,7 +10666,7 @@ app.all(["/api/gateway/sms-webhook", "/api/wallet/sms-webhook"], async (req, res
 });
 
 // 2. Student Create Wallet / InstaPay Order (With Authoritative Database Price Protection & Receipt Image Support)
-app.post("/api/gateway/create-order", rateLimiter(30, 5 * 60 * 1000), async (req, res) => {
+app.post("/api/gateway/create-order", verifyFirebaseToken, rateLimiter(30, 5 * 60 * 1000), async (req: AuthenticatedRequest, res) => {
   try {
     const {
       studentId,
@@ -9196,14 +10681,17 @@ app.post("/api/gateway/create-order", rateLimiter(30, 5 * 60 * 1000), async (req
       paymentMethod = "vodafone_cash",
       receiptImageUrl,
       bundleId,
-      bundleCourseIds,
     } = req.body || {};
 
     if (!courseId && !bundleId) {
       return res.status(400).json({ error: "معرف الكورس أو الباقة مطلوب." });
     }
-    if (!studentId) {
+    const effectiveStudentId = studentId || req.user?.uid;
+    if (!effectiveStudentId) {
       return res.status(400).json({ error: "الرجاء تسجيل الدخول أولاً لتأكيد طلب الاشتراك." });
+    }
+    if (!isStaffUser(req.user) && req.user?.uid !== effectiveStudentId) {
+      return res.status(403).json({ error: "غير مصرح: لا يمكنك إنشاء طلب اشتراك لطالب آخر." });
     }
     if (!senderPhone || senderPhone.trim().length < 4) {
       return res.status(400).json({
@@ -9215,18 +10703,19 @@ app.post("/api/gateway/create-order", rateLimiter(30, 5 * 60 * 1000), async (req
     }
 
     let finalTitle = courseTitle || "كورس تعليمي معتمد";
-    let finalPrice = Number(coursePrice) || 0;
+    let finalPrice = 0;
     let finalCourseId = courseId || bundleId;
-    let resolvedBundleCourseIds: string[] | undefined = Array.isArray(bundleCourseIds) ? bundleCourseIds : undefined;
+    let resolvedBundleCourseIds: string[] | undefined = undefined;
 
     if (bundleId) {
       const bundlesList = loadBundlesFromDisk();
       const foundBundle = bundlesList.find((b: any) => String(b.id) === String(bundleId));
-      if (foundBundle) {
-        finalTitle = `باقة: ${foundBundle.title}`;
-        finalPrice = Number(foundBundle.bundlePrice) || finalPrice;
-        resolvedBundleCourseIds = Array.isArray(foundBundle.courseIds) ? foundBundle.courseIds : resolvedBundleCourseIds;
+      if (!foundBundle) {
+        return res.status(404).json({ error: "الباقة المطلوبة غير موجودة." });
       }
+      finalTitle = `باقة: ${foundBundle.title}`;
+      finalPrice = Math.max(0, Number(foundBundle.bundlePrice) || 0);
+      resolvedBundleCourseIds = Array.isArray(foundBundle.courseIds) ? foundBundle.courseIds : undefined;
     } else {
       // SECURITY: Always fetch the authoritative course price from the database, never trust client-supplied coursePrice
       const authCourse = await getAuthoritativeCourseFromDB(
@@ -9234,13 +10723,16 @@ app.post("/api/gateway/create-order", rateLimiter(30, 5 * 60 * 1000), async (req
         Number(coursePrice) || 0,
         courseTitle || "كورس تعليمي معتمد"
       );
+      if (!authCourse.foundInDb) {
+        return res.status(404).json({ error: "الكورس المطلوب غير موجود في قاعدة البيانات." });
+      }
       finalTitle = authCourse.title;
       finalPrice = authCourse.price;
     }
 
     const result = await createStudentWalletOrder({
-      studentId,
-      studentName: studentName || "طالب المنصة",
+      studentId: effectiveStudentId,
+      studentName: studentName || req.user?.name || "طالب المنصة",
       studentPhone: studentPhone || "",
       senderPhone: senderPhone.trim(),
       transactionId: transactionId ? String(transactionId).trim() : undefined,
@@ -9367,7 +10859,7 @@ async function resolveStudentAccountRecordFromDB(
     } catch {}
   }
 
-  // 2. Check Firestore `qalbalelm_data/users` if needed
+  // 2. Check Firestore `al_motafalsifa_data/users` if needed
   let cloudUserFromList: any = null;
   if (uIdx === -1 && !firestoreUserDoc) {
     try {
@@ -9441,10 +10933,11 @@ async function resolveStudentAccountRecordFromDB(
   };
 }
 
-app.get("/api/courses/:courseId/enrollment-status", async (req, res) => {
+app.get("/api/courses/:courseId/enrollment-status", verifyFirebaseToken, async (req: AuthenticatedRequest, res) => {
   try {
     const { courseId } = req.params;
-    const studentId = String(req.query.studentId || "").trim();
+    const requestedStudentId = String(req.query.studentId || req.user?.uid || "").trim();
+    const studentId = isStaffUser(req.user) ? requestedStudentId : req.user?.uid || "";
     const studentPhone = String(req.query.studentPhone || "").replace(/\D/g, "");
 
     const authCourse = await getAuthoritativeCourseFromDB(courseId, 0);
@@ -9483,7 +10976,7 @@ app.get("/api/courses/:courseId/enrollment-status", async (req, res) => {
   }
 });
 
-app.post("/api/courses/subscribe-db", rateLimiter(35, 5 * 60 * 1000), async (req, res) => {
+app.post("/api/courses/subscribe-db", verifyFirebaseToken, rateLimiter(35, 5 * 60 * 1000), async (req: AuthenticatedRequest, res) => {
   try {
     const {
       method, // 'coupon_100' | 'wallet_balance' | 'purchase_card'
@@ -9496,14 +10989,17 @@ app.post("/api/courses/subscribe-db", rateLimiter(35, 5 * 60 * 1000), async (req
       accountBalance,
       couponCode,
       purchaseCardCode,
-      clientKnownCodes,
     } = req.body || {};
 
     if (!courseId) {
       return res.status(400).json({ error: "معرف الكورس مطلوب لإتمام الاشتراك." });
     }
-    if (!studentId) {
+    const effectiveStudentId = studentId || req.user?.uid;
+    if (!effectiveStudentId) {
       return res.status(401).json({ error: "يرجى تسجيل الدخول بحساب الطالب أولاً." });
+    }
+    if (!isStaffUser(req.user) && req.user?.uid !== effectiveStudentId) {
+      return res.status(403).json({ error: "غير مصرح: لا يمكنك تفعيل اشتراك لحساب مستخدم آخر." });
     }
 
     // 1. Fetch authoritative course price from the server database (Prevents any client-side price manipulation)
@@ -9693,7 +11189,7 @@ app.post("/api/courses/subscribe-db", rateLimiter(35, 5 * 60 * 1000), async (req
       // SECURITY: Only validate against authoritative server & Firestore access codes (never merge untrusted clientKnownCodes)
       let serverCodes = loadServerAccessCodes();
 
-      // Also check Firestore qalbalelm_data/access_codes if code not yet in local list
+      // Also check Firestore al_motafalsifa_data/access_codes if code not yet in local list
       let codeIdx = serverCodes.findIndex(
         (c: any) =>
           String(c.code || "").trim().toUpperCase() === cleanCardCode &&
@@ -9702,7 +11198,7 @@ app.post("/api/courses/subscribe-db", rateLimiter(35, 5 * 60 * 1000), async (req
 
       if (codeIdx === -1) {
         try {
-          const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/qalbalelm_data/access_codes?key=${FIREBASE_API_KEY}`;
+          const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/al_motafalsifa_data/access_codes?key=${FIREBASE_API_KEY}`;
           const fsRes = await fetch(url);
           if (fsRes.ok) {
             const fsJson = await fsRes.json();
@@ -9795,7 +11291,7 @@ app.post("/api/courses/subscribe-db", rateLimiter(35, 5 * 60 * 1000), async (req
 });
 
 // 3. Check Order Status
-app.get("/api/gateway/order-status/:orderId", async (req, res) => {
+app.get("/api/gateway/order-status/:orderId", verifyFirebaseToken, async (req: AuthenticatedRequest, res) => {
   try {
     const { orderId } = req.params;
     let order = ordersStore.get(orderId);
@@ -9815,6 +11311,9 @@ app.get("/api/gateway/order-status/:orderId", async (req, res) => {
     if (!order) {
       return res.status(404).json({ error: "لم يتم العثور على الطلب." });
     }
+    if (!isStaffUser(req.user) && order.studentId !== req.user?.uid) {
+      return res.status(403).json({ error: "غير مصرح: هذا الطلب يخص مستخدماً آخر." });
+    }
 
     return res.json({
       success: true,
@@ -9830,8 +11329,8 @@ app.get("/api/gateway/order-status/:orderId", async (req, res) => {
   }
 });
 
-// 4. List All Orders for Admin Dashboard
-app.get("/api/gateway/orders", async (req, res) => {
+// 4. List All Orders for Teacher / Admin Dashboard
+app.get("/api/gateway/orders", verifyFirebaseToken, requireOwnerTeacherOrAdmin, async (_req, res) => {
   try {
     let allOrders = Array.from(ordersStore.values());
 
@@ -9859,7 +11358,7 @@ app.get("/api/gateway/orders", async (req, res) => {
       config: {
         receivingWalletNumber: WALLET_CONFIG.receivingWalletNumber,
         receivingWalletName: WALLET_CONFIG.receivingWalletName,
-        webhookUrl: "https://qalbalelm.web.app/api/gateway/sms-webhook",
+        webhookUrl: "https://motafalsifa.vercel.app/api/gateway/sms-webhook",
       },
     });
   } catch (err: any) {
@@ -9867,8 +11366,8 @@ app.get("/api/gateway/orders", async (req, res) => {
   }
 });
 
-// 5. Admin Approve Order (Unlocks course or bundle in both Firestore and users.json)
-app.post("/api/gateway/orders/:orderId/approve", async (req, res) => {
+// 5. Approve Order (Unlocks course or bundle in both Firestore and users.json)
+app.post("/api/gateway/orders/:orderId/approve", verifyFirebaseToken, requireOwnerTeacherOrAdmin, async (req: AuthenticatedRequest, res) => {
   try {
     const { orderId } = req.params;
     const { reviewedBy } = req.body || {};
@@ -9898,8 +11397,8 @@ app.post("/api/gateway/orders/:orderId/approve", async (req, res) => {
   }
 });
 
-// 6. Admin Reject Order
-app.post("/api/gateway/orders/:orderId/reject", async (req, res) => {
+// 6. Reject Order
+app.post("/api/gateway/orders/:orderId/reject", verifyFirebaseToken, requireOwnerTeacherOrAdmin, async (req, res) => {
   try {
     const { orderId } = req.params;
     const { reason } = req.body || {};
@@ -9910,8 +11409,8 @@ app.post("/api/gateway/orders/:orderId/reject", async (req, res) => {
   }
 });
 
-// 7. Simulate SMS (For testing and debugging in Admin Dashboard)
-app.post("/api/gateway/simulate-sms", async (req, res) => {
+// 7. Simulate SMS (For testing and debugging)
+app.post("/api/gateway/simulate-sms", verifyFirebaseToken, requireOwnerTeacherOrAdmin, async (req, res) => {
   try {
     const { message, sender = "VF-Cash" } = req.body || {};
     if (!message) {
@@ -9921,6 +11420,7 @@ app.post("/api/gateway/simulate-sms", async (req, res) => {
     const result = await processIncomingSmsWebhook({
       sender,
       message,
+      secret: WALLET_CONFIG.webhookSecret,
     });
 
     return res.json({
@@ -9937,7 +11437,7 @@ app.get("/api/gateway/config", (req, res) => {
   return res.json({
     receivingWalletNumber: WALLET_CONFIG.receivingWalletNumber,
     receivingWalletName: WALLET_CONFIG.receivingWalletName,
-    webhookUrl: "https://qalbalelm.web.app/api/gateway/sms-webhook",
+    webhookUrl: "https://motafalsifa.vercel.app/api/gateway/sms-webhook",
     taskerPayloadTemplate: JSON.stringify({
       sender: "%SMSRF",
       message: "%SMSRB",
@@ -9945,7 +11445,7 @@ app.get("/api/gateway/config", (req, res) => {
   });
 });
 
-app.post("/api/gateway/config", (req, res) => {
+app.post("/api/gateway/config", verifyFirebaseToken, requireOwnerTeacherOrAdmin, (req, res) => {
   try {
     const { receivingWalletNumber, webhookSecret, receivingWalletName } = req.body || {};
     const updated = updateWalletConfig({
@@ -9958,7 +11458,7 @@ app.post("/api/gateway/config", (req, res) => {
       config: {
         receivingWalletNumber: updated.receivingWalletNumber,
         receivingWalletName: updated.receivingWalletName,
-        webhookUrl: "https://qalbalelm.web.app/api/gateway/sms-webhook",
+        webhookUrl: "https://motafalsifa.vercel.app/api/gateway/sms-webhook",
       },
     });
   } catch (err: any) {
@@ -9983,7 +11483,7 @@ app.get("/api/vcdn/config", (req, res) => {
 });
 
 // 2. Update VCDN config from Admin / Teacher dashboard (server-side only)
-app.post("/api/vcdn/config", async (req, res) => {
+app.post("/api/vcdn/config", verifyFirebaseToken, requireRestrictedTeacher, async (req, res) => {
   try {
     const { apiKey, baseUrl, syncNow } = req.body || {};
     const result = updateVcdnConfig(apiKey, baseUrl);
@@ -9998,7 +11498,7 @@ app.post("/api/vcdn/config", async (req, res) => {
 });
 
 // 2b. Test VCDN connection & sync existing local videos to remote VCDN library
-app.post("/api/vcdn/test-sync", async (req, res) => {
+app.post("/api/vcdn/test-sync", verifyFirebaseToken, requireRestrictedTeacher, async (req, res) => {
   try {
     const { apiKey, baseUrl } = req.body || {};
     const result = await testVcdnConnectionAndSync(baseUrl, apiKey);
@@ -10009,7 +11509,7 @@ app.post("/api/vcdn/test-sync", async (req, res) => {
 });
 
 // 3. Presign Upload Session (Calls VCDN POST /api/v1/upload/presign)
-app.post("/api/vcdn/upload/presign", async (req, res) => {
+app.post("/api/vcdn/upload/presign", verifyFirebaseToken, requireRestrictedTeacher, async (req, res) => {
   try {
     const { title, fileName, fileSize, partSize, fileFingerprint } = req.body || {};
     if (!title || !fileName || !fileSize) {
@@ -10032,7 +11532,7 @@ app.post("/api/vcdn/upload/presign", async (req, res) => {
 });
 
 // 4. Upload Part Chunk (Multipart / Chunked Upload with Resume & Raw Binary/JSON support)
-app.post("/api/vcdn/upload/part", async (req, res) => {
+app.post("/api/vcdn/upload/part", verifyFirebaseToken, requireRestrictedTeacher, async (req, res) => {
   try {
     const sessionId = (req.query?.sessionId || req.headers["x-session-id"] || req.body?.sessionId) as string;
     const partNumber = Number(req.query?.partNumber || req.headers["x-part-number"] || req.body?.partNumber);
@@ -10084,7 +11584,7 @@ app.post("/api/vcdn/upload/part", async (req, res) => {
 });
 
 // 5. Finalize Upload Session
-app.post("/api/vcdn/upload/finalize", async (req, res) => {
+app.post("/api/vcdn/upload/finalize", verifyFirebaseToken, requireRestrictedTeacher, async (req, res) => {
   try {
     const { sessionId } = req.body || {};
     if (!sessionId) {
@@ -10100,7 +11600,7 @@ app.post("/api/vcdn/upload/finalize", async (req, res) => {
 });
 
 // 6. Polling Video Status (GET /api/v1/videos/{id})
-app.get("/api/vcdn/videos/:videoId/status", async (req, res) => {
+app.get("/api/vcdn/videos/:videoId/status", verifyFirebaseToken, async (req, res) => {
   try {
     const videoId = req.params.videoId;
     if (!videoId) {
@@ -10116,7 +11616,7 @@ app.get("/api/vcdn/videos/:videoId/status", async (req, res) => {
 });
 
 // 6b. Explicitly Mark Video as Ready & Verified
-app.post("/api/vcdn/videos/:videoId/mark-ready", (req, res) => {
+app.post("/api/vcdn/videos/:videoId/mark-ready", verifyFirebaseToken, requireRestrictedTeacher, (req, res) => {
   try {
     const videoId = req.params.videoId;
     if (!videoId) {
@@ -10131,7 +11631,7 @@ app.post("/api/vcdn/videos/:videoId/mark-ready", (req, res) => {
 });
 
 // 7. Generate Temporary Playback Token & HLS Stream URL (Protected)
-app.post("/api/vcdn/videos/:videoId/playback-token", async (req, res) => {
+app.post("/api/vcdn/videos/:videoId/playback-token", verifyFirebaseToken, async (req: AuthenticatedRequest, res) => {
   try {
     const videoId = req.params.videoId;
     const { studentId, studentName, studentPhone, ttlSeconds } = req.body || {};
@@ -10142,8 +11642,8 @@ app.post("/api/vcdn/videos/:videoId/playback-token", async (req, res) => {
 
     const result = await createPlaybackToken({
       videoId,
-      studentId,
-      studentName,
+      studentId: studentId || req.user?.uid,
+      studentName: studentName || req.user?.name,
       studentPhone,
       ttlSeconds,
     });
@@ -10156,9 +11656,9 @@ app.post("/api/vcdn/videos/:videoId/playback-token", async (req, res) => {
 });
 
 // 7b. List Uploaded Videos in Server Library
-app.get("/api/vcdn/library", (_req, res) => {
+app.get("/api/vcdn/library", verifyFirebaseToken, requireRestrictedTeacher, (_req, res) => {
   try {
-    const tmpUploadsDir = path.join("/tmp", "qalb_uploads");
+    const tmpUploadsDir = path.join("/tmp", "al_motafalsifa_uploads");
     const legacyUploadsDir = path.join(process.cwd(), "data", "uploads");
     const dirs = [tmpUploadsDir, legacyUploadsDir].filter((d) => fs.existsSync(d));
     if (dirs.length === 0) {
@@ -10214,45 +11714,54 @@ app.get("/api/vcdn/library", (_req, res) => {
   }
 });
 
-// 8. Stream VCDN Video with full HTTP 206 Partial Content / Range support
+// 8. Stream VCDN Video with full HTTP 206 Partial Content / Range support + Signed URL Verification
 app.get("/api/vcdn/stream/:videoId", (req, res) => {
   try {
+    const svtParam = String(req.query.svt || "").trim();
+    if (svtParam) {
+      const svtCheck = verifyVideoStreamToken(svtParam);
+      if (!svtCheck.valid) {
+        if (svtCheck.reason === "FORCE_LOGOUT") {
+          return res.status(401).json({
+            success: false,
+            code: "FORCE_LOGOUT",
+            forceLogout: true,
+            error: "تم تسجيل الدخول من جهاز آخر",
+          });
+        }
+        return res.status(403).json({
+          success: false,
+          code: "SIGNED_URL_EXPIRED",
+          error: "انتهت صلاحية رابط الفيديو المؤقت.",
+        });
+      }
+    }
+
     const rawId = req.params.videoId.replace(/^vcdn:/, "");
     const videoId = rawId.replace(/[^a-zA-Z0-9_-]/g, "");
-    const tmpUploadsDir = path.join("/tmp", "qalb_uploads");
+    if (!videoId) {
+      return res.status(404).json({ error: "معرف الفيديو غير صالح." });
+    }
+    const tmpUploadsDir = path.join("/tmp", "al_motafalsifa_uploads");
     const legacyUploadsDir = path.join(process.cwd(), "data", "uploads");
     const dirs = [tmpUploadsDir, legacyUploadsDir].filter((d) => fs.existsSync(d));
 
     for (const dir of dirs) {
       const exactPath = path.join(dir, `${videoId}.mp4`);
       if (fs.existsSync(exactPath)) {
-        return streamVideoFile(req, res, exactPath);
+        return streamVideoFile(req, res, exactPath, Boolean(svtParam));
       }
     }
 
     for (const dir of dirs) {
       const files = fs.readdirSync(dir);
-      const matchFile = files.find((f) => f.startsWith(videoId));
+      const matchFile = files.find((f) => f.startsWith(videoId) && f.endsWith(".mp4"));
       if (matchFile) {
-        return streamVideoFile(req, res, path.join(dir, matchFile));
+        return streamVideoFile(req, res, path.join(dir, matchFile), Boolean(svtParam));
       }
     }
 
-    // Fallback: pick the most recently uploaded .mp4 file by modification time
-    const mp4s: Array<{ fullPath: string; mtime: number }> = [];
-    for (const dir of dirs) {
-      for (const f of fs.readdirSync(dir)) {
-        if (f.endsWith(".mp4")) {
-          const fullPath = path.join(dir, f);
-          mp4s.push({ fullPath, mtime: fs.statSync(fullPath).mtimeMs });
-        }
-      }
-    }
-    mp4s.sort((a, b) => b.mtime - a.mtime);
-    if (mp4s.length > 0) {
-      return streamVideoFile(req, res, mp4s[0].fullPath);
-    }
-
+    // SECURITY: Never fall back to streaming an arbitrary latest .mp4 when requested videoId does not exist
     return res.status(404).json({ error: "ملف الفيديو غير موجود على الخادم." });
   } catch (err: any) {
     console.error("[VCDN Stream Error]:", err);
@@ -10260,10 +11769,11 @@ app.get("/api/vcdn/stream/:videoId", (req, res) => {
   }
 });
 
-function streamVideoFile(req: express.Request, res: express.Response, filePath: string) {
+function streamVideoFile(req: express.Request, res: express.Response, filePath: string, isSigned = false) {
   const stat = fs.statSync(filePath);
   const fileSize = stat.size;
   const range = req.headers.range;
+  const cacheHeader = isSigned ? "private, no-store, no-cache, must-revalidate" : "private, max-age=300";
 
   if (range) {
     const parts = range.replace(/bytes=/, "").split("-");
@@ -10276,7 +11786,7 @@ function streamVideoFile(req: express.Request, res: express.Response, filePath: 
       "Accept-Ranges": "bytes",
       "Content-Length": chunksize,
       "Content-Type": "video/mp4",
-      "Cache-Control": "public, max-age=3600",
+      "Cache-Control": cacheHeader,
     };
     res.writeHead(206, head);
     file.pipe(res);
@@ -10285,7 +11795,7 @@ function streamVideoFile(req: express.Request, res: express.Response, filePath: 
       "Content-Length": fileSize,
       "Content-Type": "video/mp4",
       "Accept-Ranges": "bytes",
-      "Cache-Control": "public, max-age=3600",
+      "Cache-Control": cacheHeader,
     };
     res.writeHead(200, head);
     fs.createReadStream(filePath).pipe(res);
@@ -10358,7 +11868,7 @@ app.post("/api/support-chat/start", async (req, res) => {
         id: `msg_welcome_${nowMs}`,
         sender: "admin",
         senderName: "إدارة المنصة - الدعم الفني",
-        text: `مرحباً بك يا ${cleanName} في خدمة الدعم الفني المباشر لمنصة قلب العلم 👋\nاكتب استفسارك أو مشكلتك هنا وسيقوم فريق الإدارة بالرد عليك فوراً.`,
+        text: `مرحباً بك يا ${cleanName} في خدمة الدعم الفني المباشر لمنصة المتفلسفة  👋\nاكتب استفسارك أو مشكلتك هنا وسيقوم فريق الإدارة بالرد عليك فوراً.`,
         timestamp: nowStr,
         createdAtMs: nowMs,
       };
@@ -10410,7 +11920,7 @@ app.get("/api/support-chat/ticket/:ticketId", (req, res) => {
 });
 
 // 3. Get all tickets for Admin Dashboard
-app.get("/api/support-chat/tickets", (req, res) => {
+app.get("/api/support-chat/tickets", verifyFirebaseToken, requireAdmin, (_req, res) => {
   try {
     const sorted = [...memorySupportTickets].sort((a, b) => (b.updatedAtMs || 0) - (a.updatedAtMs || 0));
     return res.json({ success: true, tickets: sorted });
@@ -10428,6 +11938,9 @@ app.post("/api/support-chat/message", async (req, res) => {
       return res.status(400).json({ error: "الرسالة فارغة" });
     }
 
+    const caller = await optionalAuthUser(req);
+    const effectiveSender = sender === "admin" && isStaffUser(caller) ? "admin" : "student";
+
     const cleanPhone = normalizeSupportPhone(studentPhone || String(ticketId || "").replace(/^support_/, ""));
     const resolvedId = ticketId || `support_${cleanPhone}`;
     const nowStr = new Date().toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" });
@@ -10439,8 +11952,8 @@ app.post("/api/support-chat/message", async (req, res) => {
 
     const newMsg = {
       id: `msg_${nowMs}_${Math.random().toString(36).substring(2, 7)}`,
-      sender: sender === "admin" ? "admin" : "student",
-      senderName: senderName || (sender === "admin" ? "إدارة المنصة" : studentName || "طالب"),
+      sender: effectiveSender,
+      senderName: effectiveSender === "admin" ? (senderName || "إدارة المنصة") : (studentName || "طالب"),
       text: cleanText,
       imageUrl: imageUrl || undefined,
       timestamp: nowStr,
@@ -10453,8 +11966,8 @@ app.post("/api/support-chat/message", async (req, res) => {
         studentName: studentName || "طالب",
         studentPhone: cleanPhone,
         status: "open",
-        unreadByAdmin: sender === "admin" ? 0 : 1,
-        unreadByStudent: sender === "admin" ? 1 : 0,
+        unreadByAdmin: effectiveSender === "admin" ? 0 : 1,
+        unreadByStudent: effectiveSender === "admin" ? 1 : 0,
         lastMessageText: cleanText || "📷 صورة مرفقة",
         lastMessageAt: nowStr,
         updatedAtMs: nowMs,
@@ -10467,7 +11980,7 @@ app.post("/api/support-chat/message", async (req, res) => {
       ticket.lastMessageAt = nowStr;
       ticket.updatedAtMs = nowMs;
       ticket.status = "open";
-      if (sender === "admin") {
+      if (effectiveSender === "admin") {
         ticket.unreadByStudent = (ticket.unreadByStudent || 0) + 1;
         ticket.unreadByAdmin = 0;
       } else {
@@ -10487,11 +12000,12 @@ app.post("/api/support-chat/message", async (req, res) => {
 app.post("/api/support-chat/mark-read", async (req, res) => {
   try {
     const { ticketId, readerRole, status } = req.body || {};
+    const caller = await optionalAuthUser(req);
     const ticket = memorySupportTickets.find((t) => t.id === ticketId);
     if (ticket) {
-      if (readerRole === "admin") ticket.unreadByAdmin = 0;
+      if (readerRole === "admin" && isStaffUser(caller)) ticket.unreadByAdmin = 0;
       if (readerRole === "student") ticket.unreadByStudent = 0;
-      if (status) ticket.status = status;
+      if (status && isStaffUser(caller)) ticket.status = status;
       await persistSupportTickets(memorySupportTickets);
     }
     return res.json({ success: true, ticket });
@@ -10501,7 +12015,7 @@ app.post("/api/support-chat/mark-read", async (req, res) => {
 });
 
 // 6. Delete a support ticket (Admin)
-app.delete("/api/support-chat/ticket/:ticketId", async (req, res) => {
+app.delete("/api/support-chat/ticket/:ticketId", verifyFirebaseToken, requireAdmin, async (req, res) => {
   try {
     const ticketId = req.params.ticketId;
     memorySupportTickets = memorySupportTickets.filter((t) => t.id !== ticketId);
@@ -10549,8 +12063,8 @@ async function persistWalletCodes(codes: any[], idToken?: string) {
   await syncToFirestoreRest("wallet_codes", codes, idToken).catch(() => {});
 }
 
-// 1. Get all wallet recharge codes (Admin)
-app.get("/api/wallet/codes", async (_req, res) => {
+// 1. Get all wallet recharge codes (Owner Teacher / Admin)
+app.get("/api/wallet/codes", verifyFirebaseToken, requireOwnerTeacherOrAdmin, async (_req, res) => {
   try {
     if (memoryWalletCodes.length === 0) {
       memoryWalletCodes = loadWalletCodesFromDisk();
@@ -10561,8 +12075,8 @@ app.get("/api/wallet/codes", async (_req, res) => {
   }
 });
 
-// 2. Save / sync wallet recharge codes (Admin)
-app.post("/api/wallet/codes/save", async (req, res) => {
+// 2. Save / sync wallet recharge codes (Owner Teacher / Admin)
+app.post("/api/wallet/codes/save", verifyFirebaseToken, requireOwnerTeacherOrAdmin, async (req, res) => {
   try {
     const { codes } = req.body || {};
     if (!Array.isArray(codes)) {
@@ -10577,16 +12091,43 @@ app.post("/api/wallet/codes/save", async (req, res) => {
   }
 });
 
+// 2b. Get & Save course access codes (Owner Teacher / Admin)
+app.get("/api/access-codes", verifyFirebaseToken, requireOwnerTeacherOrAdmin, async (_req, res) => {
+  try {
+    const codes = loadServerAccessCodes();
+    return res.json({ success: true, codes });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "فشل جلب أكواد الكورسات" });
+  }
+});
+
+app.post("/api/access-codes/save", verifyFirebaseToken, requireOwnerTeacherOrAdmin, async (req, res) => {
+  try {
+    const { codes } = req.body || {};
+    if (!Array.isArray(codes)) {
+      return res.status(400).json({ error: "صيغة أكواد الكورسات غير صالحة" });
+    }
+    saveServerAccessCodes(codes);
+    return res.json({ success: true, codes });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "فشل حفظ أكواد الكورسات" });
+  }
+});
+
 // 3. Redeem a Wallet Recharge Code (Student)
-app.post("/api/wallet/redeem", async (req, res) => {
+app.post("/api/wallet/redeem", verifyFirebaseToken, rateLimiter(15, 5 * 60 * 1000), async (req: AuthenticatedRequest, res) => {
   try {
     const { code, studentId, studentName, studentPhone } = req.body || {};
     const cleanCode = String(code || "").trim().toUpperCase();
     if (!cleanCode) {
       return res.status(400).json({ error: "يرجى إدخال كود شحن المحفظة." });
     }
-    if (!studentId) {
+    const effectiveStudentId = studentId || req.user?.uid;
+    if (!effectiveStudentId) {
       return res.status(400).json({ error: "يرجى تسجيل الدخول بحساب الطالب أولاً." });
+    }
+    if (!isStaffUser(req.user) && req.user?.uid !== effectiveStudentId) {
+      return res.status(403).json({ error: "غير مصرح: لا يمكنك شحن محفظة مستخدم آخر." });
     }
 
     if (memoryWalletCodes.length === 0) {
@@ -10597,10 +12138,10 @@ app.post("/api/wallet/redeem", async (req, res) => {
       (c) => String(c.code || "").trim().toUpperCase() === cleanCode
     );
 
-    // If not found in memory/disk, check Firestore qalbalelm_data/wallet_codes
+    // If not found in memory/disk, check Firestore al_motafalsifa_data/wallet_codes
     if (codeIdx === -1) {
       try {
-        const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/qalbalelm_data/wallet_codes?key=${FIREBASE_API_KEY}`;
+        const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/al_motafalsifa_data/wallet_codes?key=${FIREBASE_API_KEY}`;
         const fsRes = await fetch(url);
         if (fsRes.ok) {
           const fsJson = await fsRes.json();
@@ -10653,7 +12194,7 @@ app.post("/api/wallet/redeem", async (req, res) => {
     const updatedCode = {
       ...targetCode,
       isUsed: true,
-      usedByStudentId: studentId,
+      usedByStudentId: effectiveStudentId,
       usedByStudentName: studentName || "طالب المنصة",
       usedByStudentPhone: studentPhone || "",
       usedAt: nowFormatted,
@@ -10665,7 +12206,7 @@ app.post("/api/wallet/redeem", async (req, res) => {
     // Update student in disk users.json
     const diskUsers = readDiskUsers();
     const uIdx = diskUsers.findIndex(
-      (u: any) => u && (u.id === studentId || (studentPhone && u.phone === studentPhone))
+      (u: any) => u && (u.id === effectiveStudentId || (studentPhone && u.phone === studentPhone))
     );
 
     let newBalance = amount;
@@ -10706,7 +12247,7 @@ app.post("/api/wallet/redeem", async (req, res) => {
 });
 
 // 4. Admin Direct Wallet Balance Adjust / Top-up
-app.post("/api/wallet/admin-adjust", async (req, res) => {
+app.post("/api/wallet/admin-adjust", verifyFirebaseToken, requireAdmin, async (req, res) => {
   try {
     const { studentId, studentPhone, mode = "add", amount, note } = req.body || {};
     const numAmount = Number(amount);
@@ -10779,7 +12320,7 @@ function loadBundlesFromDisk(): any[] {
       id: "bundle_term1_bio",
       title: "باقة التميز الشاملة - الأحياء والجيولوجيا (الترم كاملاً)",
       description: "اشترك في باقة الكورسات المجمعة واحصل على شرح المنهج بالكامل + بنك الأسئلة + المراجعات النهائية بخصم حصري 36%.",
-      grade: "الصف الثالث الثانوي",
+      grade: "الصف الأول الثانوي",
       courseIds: ["1", "2"],
       originalTotalPrice: 550,
       bundlePrice: 350,
@@ -10798,7 +12339,7 @@ function loadBundlesFromDisk(): any[] {
       id: "bundle_revision_vip",
       title: "باقة الإنقاذ والمراجعة النهائية + معسكر ليلة الامتحان",
       description: "كل ما تحتاجه لتقفيل المادة في باقة واحدة مكثفة تشمل حل الكتب الخارجية والامتحانات الشاملة.",
-      grade: "الصف الثالث الثانوي",
+      grade: "الصف الأول الثانوي",
       courseIds: ["2", "3"],
       originalTotalPrice: 600,
       bundlePrice: 420,
@@ -10837,7 +12378,7 @@ app.get("/api/bundles", (_req, res) => {
   }
 });
 
-app.post("/api/bundles", (req, res) => {
+app.post("/api/bundles", verifyFirebaseToken, requireAdmin, (req, res) => {
   try {
     const {
       title,
@@ -10863,7 +12404,7 @@ app.post("/api/bundles", (req, res) => {
       id: `bundle_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       title: String(title).trim(),
       description: String(description || "باقة كورسات مجمعة بسعر مخفض").trim(),
-      grade: String(grade || "الصف الثالث الثانوي"),
+      grade: String(grade || "الصف الأول الثانوي"),
       courseIds: courseIds.map(String),
       originalTotalPrice: orig,
       bundlePrice: price,
@@ -10894,7 +12435,7 @@ app.post("/api/bundles", (req, res) => {
   }
 });
 
-app.delete("/api/bundles/:id", (req, res) => {
+app.delete("/api/bundles/:id", verifyFirebaseToken, requireAdmin, (req, res) => {
   try {
     const { id } = req.params;
     const bundles = loadBundlesFromDisk().filter((b: any) => String(b.id) !== String(id));
@@ -10905,12 +12446,15 @@ app.delete("/api/bundles/:id", (req, res) => {
   }
 });
 
-app.post("/api/bundles/:id/subscribe-wallet", async (req, res) => {
+app.post("/api/bundles/:id/subscribe-wallet", verifyFirebaseToken, rateLimiter(15, 5 * 60 * 1000), async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
-    const { studentId } = req.body || {};
-    if (!studentId) {
+    const effectiveStudentId = req.body?.studentId || req.user?.uid;
+    if (!effectiveStudentId) {
       return res.status(400).json({ error: "يجب تسجيل الدخول أولاً للاشتراك في الباقة." });
+    }
+    if (!isStaffUser(req.user) && req.user?.uid !== effectiveStudentId) {
+      return res.status(403).json({ error: "غير مصرح: لا يمكنك تفعيل باقة لحساب آخر." });
     }
 
     const bundles = loadBundlesFromDisk();
@@ -10920,7 +12464,7 @@ app.post("/api/bundles/:id/subscribe-wallet", async (req, res) => {
     }
 
     const diskUsers = readDiskUsers();
-    const uIdx = diskUsers.findIndex((u: any) => String(u.id) === String(studentId));
+    const uIdx = diskUsers.findIndex((u: any) => String(u.id) === String(effectiveStudentId));
     if (uIdx < 0) {
       return res.status(404).json({ error: "حساب الطالب غير موجود في قاعدة البيانات." });
     }
@@ -10994,7 +12538,7 @@ function loadLessonQAFromDisk(): any[] {
       lessonTitle: "المحاضرة الأولى: الدعامة في النبات والتركيب الفسيولوجي",
       studentId: "student-1",
       studentName: "أحمد محمد علي",
-      studentGrade: "الصف الثالث الثانوي",
+      studentGrade: "الصف الأول الثانوي",
       questionText: "يا دكتور، هل الدعامة الفسيولوجية تتأثر بنوع التربة لو كانت التربة مالحة؟ وكيف نجيب على سؤال العلاقة البيانية بين الضغط الأسموزي وانتفاخ الخلية؟",
       videoTimestamp: "14:20",
       isResolved: true,
@@ -11002,8 +12546,8 @@ function loadLessonQAFromDisk(): any[] {
       replies: [
         {
           id: "qar_seed_1",
-          authorId: "teacher-1",
-          authorName: "د. حسام شحاته",
+          authorId: "teacher-1791139743075",
+          authorName: "أ/ سوزان كريم فهمي",
           authorRole: "teacher",
           text: "سؤال ممتاز يا أحمد! نعم، إذا زادت ملوحة التربة يزداد الضغط الأسموزي للتربة عن الفجوة العصارية للخلية، فيتحرك الماء للخارج وتفقد الخلية دعامتها الفسيولوجية. والعلاقة بين الضغط الأسموزي داخل الفجوة العصارية وامتصاص الماء علاقة طردية حتى تصل الخلية للامتلاء.",
           createdAt: "منذ ساعة",
@@ -11041,7 +12585,7 @@ app.get("/api/lesson-qa", (req, res) => {
   }
 });
 
-app.post("/api/lesson-qa/ask", (req, res) => {
+app.post("/api/lesson-qa/ask", verifyFirebaseToken, (req: AuthenticatedRequest, res) => {
   try {
     const {
       courseId,
@@ -11059,6 +12603,8 @@ app.post("/api/lesson-qa/ask", (req, res) => {
       return res.status(400).json({ error: "يرجى كتابة السؤال أولاً." });
     }
 
+    const effectiveStudentId = isStaffUser(req.user) ? (studentId || req.user?.uid) : req.user?.uid;
+
     const nowFormatted = new Date().toLocaleDateString("ar-EG", {
       month: "short",
       day: "numeric",
@@ -11071,8 +12617,8 @@ app.post("/api/lesson-qa/ask", (req, res) => {
       courseId: String(courseId),
       lessonId: String(lessonId || "general"),
       lessonTitle: String(lessonTitle || "سؤال عام على الكورس"),
-      studentId: String(studentId || "guest"),
-      studentName: String(studentName || "طالب المنصة"),
+      studentId: String(effectiveStudentId || "student"),
+      studentName: String(studentName || req.user?.name || "طالب المنصة"),
       studentGrade: String(studentGrade || ""),
       questionText: String(questionText).trim(),
       imageUrl: imageUrl || undefined,
@@ -11092,10 +12638,10 @@ app.post("/api/lesson-qa/ask", (req, res) => {
   }
 });
 
-app.post("/api/lesson-qa/:id/reply", (req, res) => {
+app.post("/api/lesson-qa/:id/reply", verifyFirebaseToken, (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
-    const { authorId, authorName, authorRole, text, imageUrl } = req.body || {};
+    const { authorName, text, imageUrl } = req.body || {};
 
     if (!text || !String(text).trim()) {
       return res.status(400).json({ error: "يرجى كتابة نص الرد." });
@@ -11107,6 +12653,14 @@ app.post("/api/lesson-qa/:id/reply", (req, res) => {
       return res.status(404).json({ error: "السؤال غير موجود." });
     }
 
+    const resolvedRole = resolveAuthoritativeRoleForUser(
+      req.user?.uid,
+      req.user?.email,
+      req.user?.phone_number,
+      (req.user as any)?.role
+    );
+    const derivedRole = resolvedRole.isAssistant ? "assistant" : resolvedRole.role;
+
     const nowFormatted = new Date().toLocaleDateString("ar-EG", {
       month: "short",
       day: "numeric",
@@ -11116,16 +12670,16 @@ app.post("/api/lesson-qa/:id/reply", (req, res) => {
 
     const newReply = {
       id: `qar_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      authorId: String(authorId || "staff"),
-      authorName: String(authorName || "المعلم"),
-      authorRole: authorRole || "teacher",
+      authorId: String(req.user?.uid || "staff"),
+      authorName: String(authorName || req.user?.name || (isStaffUser(req.user) ? "المعلم" : "طالب")),
+      authorRole: derivedRole,
       text: String(text).trim(),
       imageUrl: imageUrl || undefined,
       createdAt: nowFormatted,
     };
 
     items[idx].replies = [...(Array.isArray(items[idx].replies) ? items[idx].replies : []), newReply];
-    if (authorRole === "teacher" || authorRole === "admin" || authorRole === "assistant") {
+    if (derivedRole === "teacher" || derivedRole === "admin" || derivedRole === "assistant") {
       items[idx].isResolved = true;
     }
 
@@ -11136,10 +12690,18 @@ app.post("/api/lesson-qa/:id/reply", (req, res) => {
   }
 });
 
-app.delete("/api/lesson-qa/:id", (req, res) => {
+app.delete("/api/lesson-qa/:id", verifyFirebaseToken, (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
-    const items = loadLessonQAFromDisk().filter((i: any) => String(i.id) !== String(id));
+    const current = loadLessonQAFromDisk();
+    const target = current.find((i: any) => String(i.id) === String(id));
+    if (!target) {
+      return res.status(404).json({ error: "السؤال غير موجود." });
+    }
+    if (!isStaffUser(req.user) && target.studentId !== req.user?.uid) {
+      return res.status(403).json({ error: "غير مصرح: لا يمكنك حذف سؤال طالب آخر." });
+    }
+    const items = current.filter((i: any) => String(i.id) !== String(id));
     saveLessonQAToDisk(items);
     return res.json({ success: true, items });
   } catch (err: any) {
@@ -11161,20 +12723,24 @@ function getOrGenerateReferralCode(user: any): string {
   const phoneTail = String(user.phone || "99")
     .replace(/\D/g, "")
     .slice(-2);
-  return `QALB-${cleanId || "ST"}${phoneTail || "25"}`;
+  return `MTAF-${cleanId || "ST"}${phoneTail || "25"}`;
 }
 
-app.post("/api/referral/redeem", async (req, res) => {
+app.post("/api/referral/redeem", verifyFirebaseToken, rateLimiter(10, 5 * 60 * 1000), async (req: AuthenticatedRequest, res) => {
   try {
     const { studentId, referralCode } = req.body || {};
-    if (!studentId || !referralCode) {
+    const effectiveStudentId = studentId || req.user?.uid;
+    if (!effectiveStudentId || !referralCode) {
       return res.status(400).json({ error: "يرجى إدخال كود الدعوة بشكل صحيح." });
+    }
+    if (!isStaffUser(req.user) && req.user?.uid !== effectiveStudentId) {
+      return res.status(403).json({ error: "غير مصرح: لا يمكنك تفعيل كود دعوة لحساب آخر." });
     }
 
     const normalizedCode = String(referralCode).trim().toUpperCase();
     const diskUsers = readDiskUsers();
 
-    const studentIdx = diskUsers.findIndex((u: any) => String(u.id) === String(studentId));
+    const studentIdx = diskUsers.findIndex((u: any) => String(u.id) === String(effectiveStudentId));
     if (studentIdx < 0) {
       return res.status(404).json({ error: "حسابك غير مسجل في قاعدة البيانات." });
     }
@@ -11256,7 +12822,7 @@ app.post("/api/referral/redeem", async (req, res) => {
     return res.json({
       success: true,
       message: `تم تفعيل كود الدعوة بنجاح! حصلت على ${FRIEND_REWARD} ج.م هدية في محفظتك، وحصل صديقك (${inviter.name}) على ${INVITER_REWARD} ج.م 🎉`,
-      studentUser: currentStudent,
+      studentUser: sanitizeUserForClient(currentStudent),
       inviterName: inviter.name,
       rewardAmount: FRIEND_REWARD,
     });
@@ -11295,7 +12861,7 @@ app.options("/api/onedrive/cloudshell-sync", (_req, res) => {
   return res.sendStatus(200);
 });
 
-app.post("/api/onedrive/cloudshell-sync", async (req, res) => {
+app.post("/api/onedrive/cloudshell-sync", rateLimiter(10, 5 * 60 * 1000), async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   try {
     const body = req.body || {};
@@ -11407,107 +12973,7 @@ app.post("/api/onedrive/cloudshell-sync", async (req, res) => {
   }
 });
 
-app.get("/api/onedrive/cloudshell-sync", async (_req, res) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  try {
-    // Poll public relay channel used by Azure Cloud Shell (bypasses Cloud Run preview cookie 404)
-    const relayRes = await axios.get(
-      "https://ntfy.sh/qalb_onedrive_sync_471331550/json?poll=1&since=1700000000",
-      { timeout: 5000, responseType: "text" }
-    );
-    if (relayRes.data && typeof relayRes.data === "string") {
-      const lines = relayRes.data.trim().split("\n").filter(Boolean);
-      for (let i = lines.length - 1; i >= 0; i--) {
-        try {
-          const item = JSON.parse(lines[i]);
-          let msg = String(item?.message || "").trim();
-          if (msg.includes("access_token")) {
-            const match = msg.match(/"access_token"\s*:\s*"([^"]+)"/);
-            if (match && match[1]) msg = match[1];
-          }
-          const cleanTok = msg.replace(/^Bearer\s+/i, "").replace(/["'\s\r\n]+/g, "");
-          if (cleanTok.startsWith("eyJ") && cleanTok.length > 200) {
-            if (!latestOneDriveSync || latestOneDriveSync.token !== cleanTok || !latestOneDriveSync.ownerEmail) {
-              let ownerName = "حسام احمد مساعد فيصل";
-              let ownerEmail = "471331550@fayoum3.moe.edu.eg";
-              let mySiteUrl = "https://fayoum3moe-my.sharepoint.com/personal/471331550_fayoum3_moe_edu_eg/_layouts/15/onedrive.aspx";
-              let driveOk = true;
-              let driveError = "";
-              let totalGB = "1024.0";
-              let remainingGB = "1024.0";
-
-              try {
-                const meRes = await axios.get(
-                  "https://graph.microsoft.com/v1.0/me?$select=displayName,mail,userPrincipalName",
-                  {
-                    headers: { Authorization: `Bearer ${cleanTok}` },
-                    timeout: 6000,
-                  }
-                );
-                if (meRes.data) {
-                  ownerName = meRes.data.displayName || ownerName;
-                  ownerEmail = meRes.data.mail || meRes.data.userPrincipalName || ownerEmail;
-                  driveOk = true;
-                }
-              } catch {}
-
-              try {
-                const driveRes = await axios.get(
-                  "https://graph.microsoft.com/v1.0/me/drive",
-                  {
-                    headers: { Authorization: `Bearer ${cleanTok}` },
-                    timeout: 6000,
-                  }
-                );
-                if (driveRes.data) {
-                  driveOk = true;
-                  const totalBytes = Number(driveRes.data?.quota?.total || 0);
-                  const usedBytes = Number(driveRes.data?.quota?.used || 0);
-                  const remBytes = Number(
-                    driveRes.data?.quota?.remaining || Math.max(0, totalBytes - usedBytes)
-                  );
-                  if (totalBytes > 0) {
-                    totalGB = (totalBytes / (1024 * 1024 * 1024)).toFixed(1);
-                    remainingGB = (remBytes / (1024 * 1024 * 1024)).toFixed(1);
-                  }
-                  ownerName = driveRes.data?.owner?.user?.displayName || ownerName;
-                }
-              } catch (err: any) {
-                driveError =
-                  err?.response?.data?.error?.message ||
-                  err?.message ||
-                  "Files.ReadWrite not granted";
-              }
-
-
-              latestOneDriveSync = {
-                token: cleanTok,
-                mySiteUrl: mySiteUrl || undefined,
-                ownerName,
-                ownerEmail,
-                driveOk,
-                driveError: driveOk ? undefined : driveError,
-                totalGB,
-                remainingGB,
-                syncedAt: Date.now(),
-              };
-
-              try {
-                ensureDataDir();
-                fs.writeFileSync(
-                  ONEDRIVE_SYNC_FILE,
-                  JSON.stringify(latestOneDriveSync, null, 2),
-                  "utf8"
-                );
-              } catch {}
-            }
-            break;
-          }
-        } catch {}
-      }
-    }
-  } catch {}
-
+app.get("/api/onedrive/cloudshell-sync", verifyFirebaseToken, requireRestrictedTeacher, async (_req, res) => {
   if (!latestOneDriveSync || !latestOneDriveSync.token) {
     return res.json({ success: false, hasToken: false });
   }
@@ -11534,7 +13000,7 @@ const ghHlsTempSessions = new Map<
   }
 >();
 
-app.get("/api/github-hls/status", (_req, res) => {
+app.get("/api/github-hls/status", verifyFirebaseToken, requireRestrictedTeacher, (_req, res) => {
   const cfg = getGitHubHlsConfig();
   const videos = Object.values(getAllGitHubHlsVideos());
   const activeRepo = cfg?.activeRepo || "";
@@ -11567,7 +13033,7 @@ app.get("/api/github-hls/status", (_req, res) => {
   });
 });
 
-app.post("/api/github-hls/connect", async (req, res) => {
+app.post("/api/github-hls/connect", verifyFirebaseToken, requireRestrictedTeacher, async (req, res) => {
   try {
     const rawToken = String(req.body?.token || "").trim();
     const result = await connectGitHubHlsAccount(rawToken);
@@ -11591,7 +13057,7 @@ app.post("/api/github-hls/connect", async (req, res) => {
 });
 
 // Auto-Sharding Script Endpoint: Initialize 1 or multiple secondary GitHub accounts & repositories automatically
-app.post("/api/github-hls/shards/auto-init", async (req, res) => {
+app.post("/api/github-hls/shards/auto-init", verifyFirebaseToken, requireRestrictedTeacher, async (req, res) => {
   try {
     const rawTokens = req.body?.tokens || req.body?.token || "";
     const result = await autoInitializeVaultShards(rawTokens);
@@ -11611,7 +13077,7 @@ app.post("/api/github-hls/shards/auto-init", async (req, res) => {
   }
 });
 
-app.post("/api/github-hls/shards/remove", async (req, res) => {
+app.post("/api/github-hls/shards/remove", verifyFirebaseToken, requireRestrictedTeacher, async (req, res) => {
   try {
     const username = String(req.body?.username || "").trim();
     const result = removeVaultShard(username);
@@ -11660,7 +13126,7 @@ function getOrRestoreGhHlsSession(sessionId: string) {
 }
 
 // 1. Initialize temporary chunked upload before AES-128 slicing
-app.post("/api/github-hls/upload/init", (req, res) => {
+app.post("/api/github-hls/upload/init", verifyFirebaseToken, requireRestrictedTeacher, (req, res) => {
   const cfg = getGitHubHlsConfig();
   if (!cfg || !cfg.token) {
     return res.status(400).json({
@@ -11730,6 +13196,8 @@ app.post("/api/github-hls/upload/init", (req, res) => {
 // 2. Write binary video chunk to temporary transit file (supports pipelined byte-offset writes)
 app.post(
   "/api/github-hls/upload/chunk",
+  verifyFirebaseToken,
+  requireRestrictedTeacher,
   express.raw({ type: "application/octet-stream", limit: "20mb" }),
   (req, res) => {
     const sessionId = String(req.query.sessionId || "").trim();
@@ -11761,7 +13229,7 @@ app.post(
 );
 
 // 3. Finalize: Run AES-128 slicing, cache locally for instant playback, and upload to GitHub Releases in background
-app.post("/api/github-hls/upload/complete", async (req, res) => {
+app.post("/api/github-hls/upload/complete", verifyFirebaseToken, requireRestrictedTeacher, async (req, res) => {
   const sessionId = String(req.body?.sessionId || "").trim();
   const asyncPoll = Boolean(req.body?.asyncPoll);
   const customTitle = String(req.body?.title || "").trim();
@@ -11865,7 +13333,7 @@ app.post("/api/github-hls/upload/complete", async (req, res) => {
 });
 
 // 3b. Poll processing job progress (prevents Cloud Run 60s HTTP timeout on long videos!)
-app.get("/api/github-hls/upload/job/:jobId", (req, res) => {
+app.get("/api/github-hls/upload/job/:jobId", verifyFirebaseToken, requireRestrictedTeacher, (req, res) => {
   const jobId = String(req.params.jobId || "").trim();
   const job = ghHlsProcessingJobs.get(jobId);
   if (!job) {
@@ -11913,7 +13381,7 @@ app.get("/api/github-hls/:videoId/master.m3u8", async (req, res) => {
   ) {
     return res
       .status(403)
-      .send("🔒 محمي بواسطة حارس أمن منصة قلب العلم: يمنع فتح أو سحب ملف البث عبر برامج الـ Sniffers أو خارج المنصة.");
+      .send("🔒 محمي بواسطة حارس أمن منصة المتفلسفة : يمنع فتح أو سحب ملف البث عبر برامج الـ Sniffers أو خارج المنصة.");
   }
 
   const video = await ensureGitHubHlsVideoLoaded(videoId);
@@ -11950,13 +13418,14 @@ app.get("/api/github-hls/:videoId/enc.key", async (req, res) => {
   ) {
     return res
       .status(403)
-      .send("Forbidden: Sniffer / Hotlinking blocked by Qalb El-Elm Key Guard");
+      .send("Forbidden: Sniffer / Hotlinking blocked by Al-Motafalsifa Key Guard");
   }
 
-  if (kgt && !verifyKeyGuardToken(videoId, kgt)) {
+  // SECURITY: Always mandate valid signed kgt token (never allow skipping when kgt is omitted!)
+  if (!kgt || !verifyKeyGuardToken(videoId, kgt)) {
     return res
       .status(403)
-      .send("Forbidden: Invalid or expired cryptographic key signature (Anti-Sniffer Guard)");
+      .send("Forbidden: Invalid, missing, or expired cryptographic key signature (Anti-Sniffer Guard)");
   }
 
   const video = await ensureGitHubHlsVideoLoaded(videoId);
@@ -11972,7 +13441,7 @@ app.get("/api/github-hls/:videoId/enc.key", async (req, res) => {
   return res.send(keyBuf);
 });
 
-app.post("/api/github-hls/visibility", async (_req, res) => {
+app.post("/api/github-hls/visibility", verifyFirebaseToken, requireAdmin, async (_req, res) => {
   try {
     // Always enforce Public mode with obfuscated random repository names
     const result = await setVaultRepoVisibility(false);
@@ -12036,7 +13505,7 @@ app.get("/api/github-hls/:videoId/stream.mp4", async (req, res) => {
   if (secFetchDest === "document") {
     return res
       .status(403)
-      .send("🔒 محمي بواسطة حارس أمن منصة قلب العلم: يمنع فتح أو تحميل الفيديو خارج المنصة.");
+      .send("🔒 محمي بواسطة حارس أمن منصة المتفلسفة : يمنع فتح أو تحميل الفيديو خارج المنصة.");
   }
 
   const video = await ensureGitHubHlsVideoLoaded(videoId);
@@ -12190,14 +13659,16 @@ app.get("/api/template-export/mohamed-saber-platform.zip", (_req, res) => {
   return res.sendFile(zipPath);
 });
 
-// 9. One-command Firebase Hosting deployer script for qalbalelm.web.app
+// 9. One-command Firebase Hosting deployer script for motafalsifa.vercel.app
 app.get("/api/hosting-bundle.tar.gz", (_req, res) => {
-  const tarPath = path.join(process.cwd(), "public", "qalbalelm-hosting-bundle.tar.gz");
+  const tarMotaf = path.join(process.cwd(), "public", "al-motafalsifa-hosting-bundle.tar.gz");
+  const tarLegacy = path.join(process.cwd(), "public", "qalbalelm-hosting-bundle.tar.gz");
+  const tarPath = fs.existsSync(tarMotaf) ? tarMotaf : tarLegacy;
   if (!fs.existsSync(tarPath)) {
     return res.status(404).send("Hosting bundle not found.");
   }
   res.setHeader("Content-Type", "application/gzip");
-  res.setHeader("Content-Disposition", 'attachment; filename="qalbalelm-hosting-bundle.tar.gz"');
+  res.setHeader("Content-Disposition", 'attachment; filename="al-motafalsifa-hosting-bundle.tar.gz"');
   return res.sendFile(tarPath);
 });
 
@@ -12205,13 +13676,13 @@ app.get("/api/deploy-web-app.sh", (req, res) => {
   const hostOrigin = `https://${req.get("host")}`;
   const script = `#!/bin/bash
 set -e
-echo "🚀 جاري تحميل ملفات منصة قلب العلم وتفعيل الدومين الرسمي https://qalbalelm.web.app ..."
-rm -rf /tmp/qalb_web_deploy && mkdir -p /tmp/qalb_web_deploy
-cd /tmp/qalb_web_deploy
+echo "🚀 جاري تحميل ملفات منصة المتفلسفة  وتفعيل الدومين الرسمي https://motafalsifa.vercel.app ..."
+rm -rf /tmp/motafalsifa_web_deploy && mkdir -p /tmp/motafalsifa_web_deploy
+cd /tmp/motafalsifa_web_deploy
 curl -sL "${hostOrigin}/api/hosting-bundle.tar.gz" -o bundle.tar.gz
 tar -xzf bundle.tar.gz
-npx --yes firebase-tools deploy --only hosting --project qalbalelm
-echo "✅ تم تفعيل الدومين الرسمي بنجاح: https://qalbalelm.web.app"
+npx --yes firebase-tools deploy --only hosting --project alesraa-academy
+echo "✅ تم تفعيل الدومين الرسمي بنجاح: https://motafalsifa.vercel.app"
 `;
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
   return res.send(script);

@@ -37,21 +37,21 @@ import {
   sanitizeExamForStudentCache,
 } from '../utils/secureStorage';
 import { DEFAULT_COURSES } from './defaultCourses';
+import { getClientAuthHeaders, getClientAuthToken } from '../utils/authToken';
 
 export const INITIAL_PLATFORM_SETTINGS: PlatformSettings = {
-  platformName: 'قلب العلم',
-  heroTitle: 'منصة قلب العلم لدفعة 2027',
-  heroSubtitle: 'المنصة المتكاملة لتقديم الكورسات، الامتحانات الإلكترونية، والمسابقات الرسمية لدفعة 2027 تحت إشراف إدارة المنصة.',
-  supervisorName: 'إدارة المنصة',
-  supervisorTitle: 'المشرف العام وإدارة المنصة',
-  heroBannerImage: '/hero-banner-qalbalelm.jpg',
+  platformName: 'المتفلسفة',
+  heroTitle: 'منصة المتفلسفة — الصف الأول الثانوي',
+  heroSubtitle: 'المنصة التعليمية الخاصة للأستاذة سوزان كريم فهمي لشرح مادة الفلسفة والمنطق للصف الأول الثانوي والامتحانات الإلكترونية التتابعية.',
+  supervisorName: 'أ/ سوزان كريم فهمي',
+  supervisorTitle: 'معلمة مادة الفلسفة والمنطق للصف الأول الثانوي',
+  heroBannerImage: '/logo.png',
   announcementText: '',
   contactPhone: '+201040672314',
   supportWhatsapp: '+201040672314',
   homeSections: [
     { id: 'hero', visible: true, label: 'الواجهة الترحيبية الرئيسية (Hero Banner)' },
     { id: 'stats', visible: false, label: 'شريط الإحصائيات السريعة للمنصة' },
-    { id: 'teachers', visible: true, label: 'قسم نخبة المعلمين المعتمدين' },
     { id: 'courses', visible: true, label: 'قسم استكشف الكورسات والمواد الدراسية' },
     { id: 'competitions', visible: false, label: 'قسم المسابقات المجانية ولوحة الشرف' },
     { id: 'features', visible: true, label: 'قسم لماذا تختار المنصة؟ (المميزات)' },
@@ -61,15 +61,16 @@ export const INITIAL_PLATFORM_SETTINGS: PlatformSettings = {
 export const INITIAL_STUDENTS: User[] = [
   {
     id: 'teacher-1791139743075',
-    name: 'ميس : إسراء فرج',
+    name: 'أ/ سوزان كريم فهمي',
+    email: 'almtflsft@gmail.com',
     role: 'teacher',
-    phone: '01063839943',
+    phone: '',
     parentPhone: '',
     status: 'active',
     registeredAt: '2026-09-20',
-    bio: 'معلمة التاريخ والجغرافيا للمرحلة الثانوية',
-    subject: 'التاريخ والجغرافيا',
-    schoolYear: 'جميع المراحل الدراسية',
+    bio: 'معلمة وموجهة مادة الفلسفة والمنطق للصف الأول الثانوي',
+    subject: 'الفلسفة والمنطق',
+    schoolYear: 'الصف الأول الثانوي',
     enrolledCourseIds: [],
   } as unknown as User,
 ];
@@ -79,7 +80,7 @@ export const INITIAL_SUBMISSIONS: StudentExamSubmission[] = [];
 export const INITIAL_NOTIFICATIONS: PlatformNotification[] = [
   {
     id: 'notif-welcome-2027',
-    title: 'مرحباً بكم في منصة قلب العلم لدفعة 2027 🎓',
+    title: 'مرحباً بكم في منصة المتفلسفة  لدفعة 2027 🎓',
     message: 'نرحب بجميع الطلاب وأولياء الأمور في انطلاق المنصة التعليمية لدفعة 2027 تحت إشراف إدارة المنصة. تابعوا جدول الكورسات والامتحانات الدورية والمسابقات.',
     senderName: 'إدارة المنصة',
     timestamp: new Date().toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
@@ -102,21 +103,43 @@ export const INITIAL_NOTIFICATIONS: PlatformNotification[] = [
 export const INITIAL_COURSES: Course[] = DEFAULT_COURSES;
 
 export const STORAGE_KEYS = {
-  CURRENT_USER: 'qalb_alam_current_user_live',
-  USERS: 'qalb_alam_users_list_live',
-  COURSES: 'qalb_alam_courses_list_live',
-  COMPETITIONS: 'qalb_alam_competitions_list_live',
-  PLATFORM_SETTINGS: 'qalb_alam_settings_live',
-  ACCESS_CODES: 'qalb_alam_access_codes_live',
-  SUBMISSIONS: 'qalb_alam_exam_submissions_live',
-  NOTIFICATIONS: 'qalb_alam_notifications_live',
-  EXAMS_STORE: 'qalb_alam_all_exams_store_live',
-  BOOK_EXAMS: 'qalb_alam_book_exams_cache_live',
-  WALLET_CODES: 'qalb_alam_wallet_codes_live',
+  CURRENT_USER: 'al_motafalsifa_current_user_live',
+  USERS: 'al_motafalsifa_users_list_live',
+  COURSES: 'al_motafalsifa_courses_list_live',
+  COMPETITIONS: 'al_motafalsifa_competitions_list_live',
+  PLATFORM_SETTINGS: 'al_motafalsifa_settings_live',
+  ACCESS_CODES: 'al_motafalsifa_access_codes_live',
+  SUBMISSIONS: 'al_motafalsifa_exam_submissions_live',
+  NOTIFICATIONS: 'al_motafalsifa_notifications_live',
+  EXAMS_STORE: 'al_motafalsifa_all_exams_store_live',
+  BOOK_EXAMS: 'al_motafalsifa_book_exams_cache_live',
+  WALLET_CODES: 'al_motafalsifa_wallet_codes_live',
 };
 
 try {
-  const legacyKeys = ['qalb_alam_current_user_v3','qalb_alam_users_list_v3','qalb_alam_courses_list_v3','qalb_alam_competitions_list_v3','qalb_alam_access_codes_v3','qalb_alam_exam_submissions_v3','qalb_alam_courses_list','qalb_alam_competitions_list','qalb_alam_users_list','qalb_alam_submissions','qalb_alam_current_user'];
+  const legacyKeys = [
+    'qalb_alam_current_user_v3',
+    'qalb_alam_users_list_v3',
+    'qalb_alam_courses_list_v3',
+    'qalb_alam_competitions_list_v3',
+    'qalb_alam_access_codes_v3',
+    'qalb_alam_exam_submissions_v3',
+    'qalb_alam_courses_list',
+    'qalb_alam_competitions_list',
+    'qalb_alam_users_list',
+    'qalb_alam_submissions',
+    'qalb_alam_current_user',
+    'qalb_alam_courses_list_live',
+    'qalb_alam_competitions_list_live',
+    'qalb_alam_settings_live',
+    'qalb_alam_access_codes_live',
+    'qalb_alam_exam_submissions_live',
+    'qalb_alam_notifications_live',
+    'qalb_alam_all_exams_store_live',
+    'qalb_alam_book_exams_cache_live',
+    'qalb_alam_wallet_codes_live',
+    'qalb_alam_current_user_live',
+  ];
   legacyKeys.forEach((k) => localStorage.removeItem(k));
 } catch (e) {}
 
@@ -145,7 +168,7 @@ export function notifyCloudStatus(status: 'connecting' | 'connected' | 'error' |
     errorDetails,
   };
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('qalb_alam_cloud_status', { detail: currentCloudStatus }));
+    window.dispatchEvent(new CustomEvent('al_motafalsifa_cloud_status', { detail: currentCloudStatus }));
   }
 }
 
@@ -196,7 +219,7 @@ export function wrapRestValue(val: any): any {
 const writeDebounceTimers = new Map<string, any>();
 
 /**
- * Maximum number of students per sharded document in `qalbalelm_data/users_chunk_{i}`.
+ * Maximum number of students per sharded document in `al_motafalsifa_data/users_chunk_{i}`.
  * Strictly capped at 500 students per chunk so no document ever approaches Firestore's 1MB limit,
  * allowing 2,000+ to 50,000+ students without ever hitting the 1MB ceiling.
  */
@@ -205,11 +228,11 @@ export const MAX_USERS_PER_CHUNK = 500;
 /**
  * Splits a list of users into chunks of max 500 students and writes:
  * 1. Individual documents `users/{uid}` for updated records
- * 2. Sharded chunk documents `qalbalelm_data/users_chunk_1`, `users_chunk_2`, ...
- * 3. A lightweight manifest `qalbalelm_data/users` containing `totalChunks`, `totalUsers`, and up to the first 500 records for backward compatibility.
+ * 2. Sharded chunk documents `al_motafalsifa_data/users_chunk_1`, `users_chunk_2`, ...
+ * 3. A lightweight manifest `al_motafalsifa_data/users` containing `totalChunks`, `totalUsers`, and up to the first 500 records for backward compatibility.
  */
 export async function saveShardedUsersToFirestore(users: User[]): Promise<boolean> {
-  // Only Admin or Teacher is allowed to write to the sharded users manifest (`qalbalelm_data/users`).
+  // Only Admin or Teacher is allowed to write to the sharded users manifest (`al_motafalsifa_data/users`).
   // Students write exclusively to their own isolated document `users/{uid}` as enforced by firestore.rules.
   const activeUser = getCurrentUser();
   if (activeUser && activeUser.role !== 'admin' && activeUser.role !== 'teacher') {
@@ -235,8 +258,8 @@ export async function saveShardedUsersToFirestore(users: User[]): Promise<boolea
 
   const totalChunks = chunks.length;
   const nowIso = new Date().toISOString();
-  const apiKey = "AIzaSyAn6z4sDy1_sF-YmkLjA0Z1TQwU_iLClf4";
-  const projectId = "qalbalelm";
+  const apiKey = "AIzaSyDdwnLfJbsQ8hbXP-CzocjaejmvYC4FOh4";
+  const projectId = "alesraa-academy";
 
   let idToken: string | undefined;
   try {
@@ -256,7 +279,7 @@ export async function saveShardedUsersToFirestore(users: User[]): Promise<boolea
     const chunkData = chunks[idx];
 
     try {
-      await setDoc(doc(db, "qalbalelm_data", chunkDocName), {
+      await setDoc(doc(db, "al_motafalsifa_data", chunkDocName), {
         chunkIndex: idx + 1,
         totalChunks,
         count: chunkData.length,
@@ -267,7 +290,7 @@ export async function saveShardedUsersToFirestore(users: User[]): Promise<boolea
     } catch {
       if (idToken) {
         try {
-          const restUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/qalbalelm_data/${chunkDocName}?key=${apiKey}`;
+          const restUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/al_motafalsifa_data/${chunkDocName}?key=${apiKey}`;
           const res = await fetch(restUrl, {
             method: "PATCH",
             headers: restHeaders,
@@ -287,10 +310,10 @@ export async function saveShardedUsersToFirestore(users: User[]): Promise<boolea
     }
   }
 
-  // 2. Write the primary manifest `qalbalelm_data/users` (stores chunk metadata + first chunk only so it NEVER exceeds 1MB)
+  // 2. Write the primary manifest `al_motafalsifa_data/users` (stores chunk metadata + first chunk only so it NEVER exceeds 1MB)
   const firstChunk = chunks[0] || [];
   try {
-    await setDoc(doc(db, "qalbalelm_data", "users"), {
+    await setDoc(doc(db, "al_motafalsifa_data", "users"), {
       isSharded: true,
       maxPerChunk: MAX_USERS_PER_CHUNK,
       totalChunks,
@@ -303,7 +326,7 @@ export async function saveShardedUsersToFirestore(users: User[]): Promise<boolea
   } catch {
     if (idToken) {
       try {
-        const restUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/qalbalelm_data/users?key=${apiKey}`;
+        const restUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/al_motafalsifa_data/users?key=${apiKey}`;
         const res = await fetch(restUrl, {
           method: "PATCH",
           headers: restHeaders,
@@ -335,7 +358,7 @@ export async function saveShardedUsersToFirestore(users: User[]): Promise<boolea
  * and merges them seamlessly.
  */
 export async function loadShardedUsersFromFirestore(): Promise<User[]> {
-  // Only Admin or Teacher should load the full sharded users list (`qalbalelm_data/users`).
+  // Only Admin or Teacher should load the full sharded users list (`al_motafalsifa_data/users`).
   // Students load their own isolated document `users/{uid}` in loadAllFromFirebase.
   const activeUser = getCurrentUser();
   if (activeUser && activeUser.role !== 'admin' && activeUser.role !== 'teacher') {
@@ -343,8 +366,8 @@ export async function loadShardedUsersFromFirestore(): Promise<User[]> {
   }
 
   const userMap = new Map<string, User>();
-  const apiKey = "AIzaSyAn6z4sDy1_sF-YmkLjA0Z1TQwU_iLClf4";
-  const projectId = "qalbalelm";
+  const apiKey = "AIzaSyDdwnLfJbsQ8hbXP-CzocjaejmvYC4FOh4";
+  const projectId = "alesraa-academy";
 
   let idToken: string | undefined;
   try {
@@ -357,15 +380,15 @@ export async function loadShardedUsersFromFirestore(): Promise<User[]> {
 
   let totalChunks = 1;
 
-  // 1. Read manifest / first chunk from `qalbalelm_data/users`
+  // 1. Read manifest / first chunk from `al_motafalsifa_data/users`
   try {
     let snap: any = null;
     try {
-      snap = await getDocFromCache(doc(db, "qalbalelm_data", "users"));
+      snap = await getDocFromCache(doc(db, "al_motafalsifa_data", "users"));
     } catch {}
     if (!snap || !snap.exists()) {
       snap = await Promise.race([
-        getDoc(doc(db, "qalbalelm_data", "users")),
+        getDoc(doc(db, "al_motafalsifa_data", "users")),
         new Promise<null>((r) => setTimeout(() => r(null), 2000)),
       ]);
     }
@@ -380,7 +403,7 @@ export async function loadShardedUsersFromFirestore(): Promise<User[]> {
         });
       }
     } else if (idToken) {
-      const restUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/qalbalelm_data/users?key=${apiKey}`;
+      const restUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/al_motafalsifa_data/users?key=${apiKey}`;
       const res = await fetch(restUrl, { headers: restHeaders });
       if (res.ok) {
         const json = await res.json();
@@ -405,11 +428,11 @@ export async function loadShardedUsersFromFirestore(): Promise<User[]> {
         try {
           let cSnap: any = null;
           try {
-            cSnap = await getDocFromCache(doc(db, "qalbalelm_data", chunkDocName));
+            cSnap = await getDocFromCache(doc(db, "al_motafalsifa_data", chunkDocName));
           } catch {}
           if (!cSnap || !cSnap.exists()) {
             cSnap = await Promise.race([
-              getDoc(doc(db, "qalbalelm_data", chunkDocName)),
+              getDoc(doc(db, "al_motafalsifa_data", chunkDocName)),
               new Promise<null>((r) => setTimeout(() => r(null), 2000)),
             ]);
           }
@@ -426,7 +449,7 @@ export async function loadShardedUsersFromFirestore(): Promise<User[]> {
 
         if (idToken) {
           try {
-            const restUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/qalbalelm_data/${chunkDocName}?key=${apiKey}`;
+            const restUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/al_motafalsifa_data/${chunkDocName}?key=${apiKey}`;
             const res = await fetch(restUrl, { headers: restHeaders });
             if (res.ok) {
               const json = await res.json();
@@ -457,14 +480,7 @@ export async function saveToFirebase(collectionName: string, data: any): Promise
       writeDebounceTimers.delete(collectionName);
       const sanitized = sanitizeForFirestore(data);
 
-      let idToken: string | undefined;
-      try {
-        idToken = await auth.currentUser?.getIdToken();
-      } catch {}
-      const apiHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (idToken) {
-        apiHeaders['Authorization'] = `Bearer ${idToken}`;
-      }
+      const apiHeaders = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
 
       // Special handling for `users`: Automatically shard into 500-user chunks (`users_chunk_1`, `users_chunk_2`, ...)
       // so the aggregated document NEVER exceeds Firestore's 1MB limit even with 2,000+ students.
@@ -483,7 +499,7 @@ export async function saveToFirebase(collectionName: string, data: any): Promise
 
       // 1. Attempt Firestore Client SDK write
       try {
-        await setDoc(doc(db, "qalbalelm_data", collectionName), {
+        await setDoc(doc(db, "al_motafalsifa_data", collectionName), {
           data: sanitized,
           updatedAt: new Date().toISOString(),
         });
@@ -493,9 +509,9 @@ export async function saveToFirebase(collectionName: string, data: any): Promise
       } catch (e: any) {
         // 2. Fallback to Firestore REST API using the web API key
         try {
-          const apiKey = "AIzaSyAn6z4sDy1_sF-YmkLjA0Z1TQwU_iLClf4";
-          const projectId = "qalbalelm";
-          const restUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/qalbalelm_data/${collectionName}?key=${apiKey}`;
+          const apiKey = "AIzaSyDdwnLfJbsQ8hbXP-CzocjaejmvYC4FOh4";
+          const projectId = "alesraa-academy";
+          const restUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/al_motafalsifa_data/${collectionName}?key=${apiKey}`;
           const res = await fetch(restUrl, {
             method: "PATCH",
             headers: apiHeaders,
@@ -528,8 +544,9 @@ export async function saveToFirebase(collectionName: string, data: any): Promise
 
 export async function loadFromFirebase(collectionName: string, preferCacheFirst: boolean = true): Promise<any | null> {
   const activeUser = getCurrentUser();
+  const hasToken = Boolean(await getClientAuthToken());
   const isPrivileged =
-    Boolean(auth.currentUser) &&
+    hasToken &&
     (activeUser?.role === 'admin' ||
       activeUser?.role === 'teacher' ||
       auth.currentUser?.email === 'hos098sam@gmail.com');
@@ -540,7 +557,7 @@ export async function loadFromFirebase(collectionName: string, preferCacheFirst:
     if (sharded.length > 0) return sharded;
   }
 
-  // Protected admin/teacher documents in qalbalelm_data should not be queried by unauthenticated or student clients
+  // Protected admin/teacher documents in al_motafalsifa_data should not be queried by unauthenticated or student clients
   const protectedCollections = ['users', 'accessCodes', 'submissions', 'exams', 'support_chats'];
   if (protectedCollections.includes(collectionName) && !isPrivileged) {
     return null;
@@ -549,7 +566,7 @@ export async function loadFromFirebase(collectionName: string, preferCacheFirst:
   // 1. Cache-First strategy via Firestore Offline Persistence Cache (for non-courses collections)
   if (preferCacheFirst && collectionName !== "courses") {
     try {
-      const cachedSnap = await getDocFromCache(doc(db, "qalbalelm_data", collectionName));
+      const cachedSnap = await getDocFromCache(doc(db, "al_motafalsifa_data", collectionName));
       if (cachedSnap && cachedSnap.exists()) {
         const cachedData = cachedSnap.data()?.data;
         if (cachedData) {
@@ -564,7 +581,7 @@ export async function loadFromFirebase(collectionName: string, preferCacheFirst:
 
   try {
     notifyCloudStatus('connecting');
-    const firestorePromise = getDoc(doc(db, "qalbalelm_data", collectionName));
+    const firestorePromise = getDoc(doc(db, "al_motafalsifa_data", collectionName));
     const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 2500));
     const snap: any = await Promise.race([firestorePromise, timeoutPromise]);
 
@@ -585,9 +602,9 @@ export async function loadFromFirebase(collectionName: string, preferCacheFirst:
 
   // Attempt REST fallback using web API key (guarantees connectivity in iframe / school tablet networks)
   try {
-    const apiKey = "AIzaSyAn6z4sDy1_sF-YmkLjA0Z1TQwU_iLClf4";
-    const projectId = "qalbalelm";
-    const restUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/qalbalelm_data/${collectionName}?key=${apiKey}`;
+    const apiKey = "AIzaSyDdwnLfJbsQ8hbXP-CzocjaejmvYC4FOh4";
+    const projectId = "alesraa-academy";
+    const restUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/al_motafalsifa_data/${collectionName}?key=${apiKey}`;
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
     const timeoutId = setTimeout(() => controller?.abort(), 2500);
     const res = await fetch(restUrl, { signal: controller?.signal });
@@ -623,7 +640,7 @@ export const PERMANENT_DEMO_COURSE_IDS = [
 
 export function getDeletedCourseIds(): string[] {
   try {
-    const saved = localStorage.getItem('qalb_alam_deleted_course_ids');
+    const saved = localStorage.getItem('al_motafalsifa_deleted_course_ids');
     const custom = saved ? JSON.parse(saved) : [];
     return Array.from(new Set([...PERMANENT_DEMO_COURSE_IDS, ...(Array.isArray(custom) ? custom : [])]));
   } catch {}
@@ -632,7 +649,7 @@ export function getDeletedCourseIds(): string[] {
 
 export function getDeletedExamIds(): string[] {
   try {
-    const saved = localStorage.getItem('qalb_alam_deleted_exam_ids');
+    const saved = localStorage.getItem('al_motafalsifa_deleted_exam_ids');
     if (saved) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed)) return parsed;
@@ -643,7 +660,7 @@ export function getDeletedExamIds(): string[] {
 
 export function getDeletedNotificationIds(): string[] {
   try {
-    const saved = localStorage.getItem('qalb_alam_deleted_notification_ids');
+    const saved = localStorage.getItem('al_motafalsifa_deleted_notification_ids');
     if (saved) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed)) return parsed;
@@ -654,7 +671,7 @@ export function getDeletedNotificationIds(): string[] {
 
 export function getDeletedCouponIds(): string[] {
   try {
-    const saved = localStorage.getItem('qalb_alam_deleted_coupon_ids');
+    const saved = localStorage.getItem('al_motafalsifa_deleted_coupon_ids');
     if (saved) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed)) return parsed;
@@ -668,39 +685,39 @@ export function syncDeletedIds(courses?: string[], users?: string[], exams?: str
     if (Array.isArray(courses) && courses.length > 0) {
       const currentC = getDeletedCourseIds();
       const mergedC = Array.from(new Set([...currentC, ...courses.filter(Boolean)]));
-      localStorage.setItem('qalb_alam_deleted_course_ids', JSON.stringify(mergedC));
+      localStorage.setItem('al_motafalsifa_deleted_course_ids', JSON.stringify(mergedC));
     }
     if (Array.isArray(users) && users.length > 0) {
       const currentU = getDeletedUserIds();
       const mergedU = Array.from(new Set([...currentU, ...users.filter(Boolean)]));
-      localStorage.setItem('qalb_alam_deleted_user_ids', JSON.stringify(mergedU));
+      localStorage.setItem('al_motafalsifa_deleted_user_ids', JSON.stringify(mergedU));
     }
     if (Array.isArray(exams) && exams.length > 0) {
       const currentE = getDeletedExamIds();
       const mergedE = Array.from(new Set([...currentE, ...exams.filter(Boolean)]));
-      localStorage.setItem('qalb_alam_deleted_exam_ids', JSON.stringify(mergedE));
+      localStorage.setItem('al_motafalsifa_deleted_exam_ids', JSON.stringify(mergedE));
     }
     if (Array.isArray(notifications) && notifications.length > 0) {
       const currentN = getDeletedNotificationIds();
       const mergedN = Array.from(new Set([...currentN, ...notifications.filter(Boolean)]));
-      localStorage.setItem('qalb_alam_deleted_notification_ids', JSON.stringify(mergedN));
+      localStorage.setItem('al_motafalsifa_deleted_notification_ids', JSON.stringify(mergedN));
     }
     if (Array.isArray(coupons) && coupons.length > 0) {
       const currentCP = getDeletedCouponIds();
       const mergedCP = Array.from(new Set([...currentCP, ...coupons.filter(Boolean)]));
-      localStorage.setItem('qalb_alam_deleted_coupon_ids', JSON.stringify(mergedCP));
+      localStorage.setItem('al_motafalsifa_deleted_coupon_ids', JSON.stringify(mergedCP));
     }
     if (Array.isArray(videos) && videos.length > 0) {
       const currentV = getDeletedVideoIds();
       const mergedV = Array.from(new Set([...currentV, ...videos.filter(Boolean)]));
-      localStorage.setItem('qalb_alam_deleted_video_ids', JSON.stringify(mergedV));
+      localStorage.setItem('al_motafalsifa_deleted_video_ids', JSON.stringify(mergedV));
     }
   } catch {}
 }
 
 export function getDeletedVideoIds(): string[] {
   try {
-    const saved = localStorage.getItem('qalb_alam_deleted_video_ids');
+    const saved = localStorage.getItem('al_motafalsifa_deleted_video_ids');
     if (saved) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed)) return parsed;
@@ -715,14 +732,18 @@ export function addDeletedVideoId(id: string) {
   if (!current.includes(id)) {
     current.push(id);
     try {
-      localStorage.setItem('qalb_alam_deleted_video_ids', JSON.stringify(current));
+      localStorage.setItem('al_motafalsifa_deleted_video_ids', JSON.stringify(current));
     } catch {}
   }
-  fetch('/api/deleted-ids', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type: 'videos', id }),
-  }).catch(() => {});
+  getClientAuthHeaders({ 'Content-Type': 'application/json' })
+    .then((headers) =>
+      fetch('/api/deleted-ids', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ type: 'videos', id }),
+      })
+    )
+    .catch(() => {});
   saveToFirebase("deleted_ids", {
     courses: getDeletedCourseIds(),
     users: getDeletedUserIds(),
@@ -735,7 +756,9 @@ export function addDeletedVideoId(id: string) {
 
 export async function fetchServerDeletedIds(): Promise<{ courses: string[]; users: string[]; exams: string[]; notifications: string[]; coupons: string[] }> {
   try {
-    const res = await fetch('/api/deleted-ids');
+    const res = await fetch('/api/deleted-ids', {
+      headers: await getClientAuthHeaders(),
+    });
     if (res.ok) {
       const data = await res.json();
       syncDeletedIds(data.courses, data.users, data.exams, data.notifications, data.coupons);
@@ -761,20 +784,24 @@ export function addDeletedCourseId(id: string) {
   if (!current.includes(id)) {
     current.push(id);
     try {
-      localStorage.setItem('qalb_alam_deleted_course_ids', JSON.stringify(current));
+      localStorage.setItem('al_motafalsifa_deleted_course_ids', JSON.stringify(current));
     } catch {}
   }
-  fetch('/api/deleted-ids', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type: 'courses', id }),
-  }).catch(() => {});
+  getClientAuthHeaders({ 'Content-Type': 'application/json' })
+    .then((headers) =>
+      fetch('/api/deleted-ids', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ type: 'courses', id }),
+      })
+    )
+    .catch(() => {});
   saveToFirebase("deleted_ids", { courses: getDeletedCourseIds(), users: getDeletedUserIds(), exams: getDeletedExamIds() }).catch(() => {});
 }
 
 export function getDeletedUserIds(): string[] {
   try {
-    const saved = localStorage.getItem('qalb_alam_deleted_user_ids');
+    const saved = localStorage.getItem('al_motafalsifa_deleted_user_ids');
     if (saved) return JSON.parse(saved);
   } catch {}
   return [];
@@ -786,14 +813,18 @@ export function addDeletedUserId(id: string) {
   if (!current.includes(id)) {
     current.push(id);
     try {
-      localStorage.setItem('qalb_alam_deleted_user_ids', JSON.stringify(current));
+      localStorage.setItem('al_motafalsifa_deleted_user_ids', JSON.stringify(current));
     } catch {}
   }
-  fetch('/api/deleted-ids', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type: 'users', id }),
-  }).catch(() => {});
+  getClientAuthHeaders({ 'Content-Type': 'application/json' })
+    .then((headers) =>
+      fetch('/api/deleted-ids', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ type: 'users', id }),
+      })
+    )
+    .catch(() => {});
   saveToFirebase("deleted_ids", { courses: getDeletedCourseIds(), users: getDeletedUserIds(), exams: getDeletedExamIds() }).catch(() => {});
 }
 
@@ -803,14 +834,18 @@ export function addDeletedExamId(id: string) {
   if (!current.includes(id)) {
     current.push(id);
     try {
-      localStorage.setItem('qalb_alam_deleted_exam_ids', JSON.stringify(current));
+      localStorage.setItem('al_motafalsifa_deleted_exam_ids', JSON.stringify(current));
     } catch {}
   }
-  fetch('/api/deleted-ids', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type: 'exams', id }),
-  }).catch(() => {});
+  getClientAuthHeaders({ 'Content-Type': 'application/json' })
+    .then((headers) =>
+      fetch('/api/deleted-ids', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ type: 'exams', id }),
+      })
+    )
+    .catch(() => {});
   saveToFirebase("deleted_ids", { courses: getDeletedCourseIds(), users: getDeletedUserIds(), exams: getDeletedExamIds(), notifications: getDeletedNotificationIds(), coupons: getDeletedCouponIds() }).catch(() => {});
 }
 
@@ -820,14 +855,18 @@ export function addDeletedNotificationId(id: string) {
   if (!current.includes(id)) {
     current.push(id);
     try {
-      localStorage.setItem('qalb_alam_deleted_notification_ids', JSON.stringify(current));
+      localStorage.setItem('al_motafalsifa_deleted_notification_ids', JSON.stringify(current));
     } catch {}
   }
-  fetch('/api/deleted-ids', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type: 'notifications', id }),
-  }).catch(() => {});
+  getClientAuthHeaders({ 'Content-Type': 'application/json' })
+    .then((headers) =>
+      fetch('/api/deleted-ids', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ type: 'notifications', id }),
+      })
+    )
+    .catch(() => {});
   saveToFirebase("deleted_ids", { courses: getDeletedCourseIds(), users: getDeletedUserIds(), exams: getDeletedExamIds(), notifications: getDeletedNotificationIds(), coupons: getDeletedCouponIds() }).catch(() => {});
 }
 
@@ -838,14 +877,18 @@ export function addDeletedCouponId(code: string) {
   if (!current.includes(cleanCode)) {
     current.push(cleanCode);
     try {
-      localStorage.setItem('qalb_alam_deleted_coupon_ids', JSON.stringify(current));
+      localStorage.setItem('al_motafalsifa_deleted_coupon_ids', JSON.stringify(current));
     } catch {}
   }
-  fetch('/api/deleted-ids', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type: 'coupons', id: cleanCode }),
-  }).catch(() => {});
+  getClientAuthHeaders({ 'Content-Type': 'application/json' })
+    .then((headers) =>
+      fetch('/api/deleted-ids', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ type: 'coupons', id: cleanCode }),
+      })
+    )
+    .catch(() => {});
   saveToFirebase("deleted_ids", { courses: getDeletedCourseIds(), users: getDeletedUserIds(), exams: getDeletedExamIds(), notifications: getDeletedNotificationIds(), coupons: getDeletedCouponIds() }).catch(() => {});
 }
 
@@ -862,17 +905,25 @@ export function getSavedPlatformSettings(): PlatformSettings {
 export function savePlatformSettings(settings: PlatformSettings) {
   setSecureCache(STORAGE_KEYS.PLATFORM_SETTINGS, settings);
   saveToFirebase("settings", settings);
-  fetch('/api/settings/save', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ settings }),
-  }).catch(() => {});
+  getClientAuthHeaders({ 'Content-Type': 'application/json' })
+    .then((headers) =>
+      fetch('/api/settings/save', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ settings }),
+      })
+    )
+    .catch(() => {});
 }
 
 export function isDemoOrDeletedUser(u: any): boolean {
   if (!u) return true;
   const deletedIds = getDeletedUserIds();
   if (deletedIds.includes(u.id) || (u.phone && deletedIds.includes(u.phone))) {
+    return true;
+  }
+  // Reject any foreign Qalb Al-Elm user (database isolation)
+  if (u.platform === 'qalb_al_elm' || /@qalb-?al(am|elm)\.edu$/i.test(String(u.email || ''))) {
     return true;
   }
   // Demo teacher Ahmed
@@ -890,8 +941,7 @@ export function isDemoOrDeletedUser(u: any): boolean {
   // Ghost / fallback test student accounts
   if (
     u.id === 'SfE3LtThTFfDbYBAQuTsdLaRXVs1' ||
-    u.phone === '4879' ||
-    u.email === '4879@qalb-alam.edu'
+    u.phone === '4879'
   ) {
     return true;
   }
@@ -964,9 +1014,7 @@ export async function syncCoursesToServer(courses: Course[]): Promise<boolean> {
       pendingCoursesSyncTimer = null;
       const payload = latestCoursesToSync || courses;
       try {
-        const token = await auth?.currentUser?.getIdToken?.();
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const headers = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
         const res = await fetch('/api/courses/save', {
           method: 'POST',
           headers,
@@ -982,9 +1030,7 @@ export async function syncCoursesToServer(courses: Course[]): Promise<boolean> {
 
 export async function syncExamToServer(exam: CourseExam): Promise<boolean> {
   try {
-    const token = await auth?.currentUser?.getIdToken?.();
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const headers = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
     const res = await fetch('/api/exams/save', {
       method: 'POST',
       headers,
@@ -1151,7 +1197,7 @@ export function mergeUsers(existingUsers: User[], incomingUsers: User[]): User[]
       userMap.set(inc.id, {
         ...inc,
         ...base,
-        name: base.name && base.name !== 'طالب منصة قلب العلم' && base.name !== 'مستخدم منصة قلب العلم' ? base.name : inc.name,
+        name: base.name && base.name !== 'طالب منصة المتفلسفة ' && base.name !== 'مستخدم منصة المتفلسفة ' ? base.name : inc.name,
         enrolledCourseIds: mergedEnrolled,
         examResults: mergedExamResults,
         completedVideos: mergedCompletedVideos,
@@ -1317,7 +1363,7 @@ export function saveExamToStore(exam: CourseExam, targetCourseId?: string): { su
     });
 
     if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('qalb_alam_exam_saved', { detail: updatedExam }));
+      window.dispatchEvent(new CustomEvent('al_motafalsifa_exam_saved', { detail: updatedExam }));
     }
 
     return { success: true, allExams };
@@ -1354,12 +1400,7 @@ export async function deleteExamFromStore(examId: string, courseId?: string): Pr
     saveCourses(updatedCourses);
 
     // 3. Delete from Server
-    let idToken: string | undefined;
-    try {
-      idToken = await auth.currentUser?.getIdToken();
-    } catch {}
-    const headers: Record<string, string> = {};
-    if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
+    const headers = await getClientAuthHeaders();
     fetch(`/api/exams/${encodeURIComponent(examId)}`, {
       method: 'DELETE',
       headers,
@@ -1369,7 +1410,7 @@ export async function deleteExamFromStore(examId: string, courseId?: string): Pr
     saveToFirebase("exams", currentExams).catch(() => {});
 
     if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('qalb_alam_exam_deleted', { detail: { examId, courseId } }));
+      window.dispatchEvent(new CustomEvent('al_motafalsifa_exam_deleted', { detail: { examId, courseId } }));
     }
 
     return { success: true, allExams: currentExams };
@@ -1440,23 +1481,18 @@ export async function deleteCourseFromServer(courseId: string): Promise<boolean>
     const activeUser = getCurrentUser();
     setSecureCache(STORAGE_KEYS.COURSES, sanitizeCoursesForClientCache(filtered, activeUser?.role));
 
-    let idToken: string | undefined;
-    try {
-      idToken = await auth.currentUser?.getIdToken();
-    } catch {}
-    const headers: Record<string, string> = {};
-    if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
+    const authHeaders = await getClientAuthHeaders();
 
     // 1. Call server API with token
     fetch(`/api/courses/${encodeURIComponent(courseId)}`, {
       method: 'DELETE',
-      headers,
+      headers: authHeaders,
     }).catch(() => {});
 
     // 2. Also register with /api/deleted-ids store to prevent resurrection
     fetch('/api/deleted-ids', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...authHeaders, 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: 'courses', id: courseId }),
     }).catch(() => {});
 
@@ -1476,23 +1512,18 @@ export async function deleteUserFromServer(userId: string): Promise<boolean> {
     const activeUser = getCurrentUser();
     setSecureCache(STORAGE_KEYS.USERS, sanitizeUsersForClientCache(filtered, activeUser));
 
-    let idToken: string | undefined;
-    try {
-      idToken = await auth.currentUser?.getIdToken();
-    } catch {}
-    const headers: Record<string, string> = {};
-    if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
+    const authHeaders = await getClientAuthHeaders();
 
     // 1. Call server API with token
     fetch(`/api/users/${encodeURIComponent(userId)}`, {
       method: 'DELETE',
-      headers,
+      headers: authHeaders,
     }).catch(() => {});
 
     // 2. Also register with /api/deleted-ids store on server to prevent resurrection
     fetch('/api/deleted-ids', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...authHeaders, 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: 'users', id: userId }),
     }).catch(() => {});
 
@@ -1523,14 +1554,8 @@ export async function saveSingleUserToServer(user: User): Promise<boolean> {
     const activeUser = getCurrentUser();
     setSecureCache(STORAGE_KEYS.USERS, sanitizeUsersForClientCache(updated, activeUser || user));
 
-    let idToken: string | undefined;
-    try {
-      idToken = await auth.currentUser?.getIdToken();
-    } catch {}
-    const apiHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (idToken) {
-      apiHeaders['Authorization'] = `Bearer ${idToken}`;
-    }
+    const apiHeaders = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
+    const idToken = await getClientAuthToken();
 
     // 1. Server API
     fetch('/api/users/save-single', {
@@ -1540,7 +1565,7 @@ export async function saveSingleUserToServer(user: User): Promise<boolean> {
     }).catch(() => {});
 
     // 2. Client Firestore SDK (writes to isolated document `users/{uid}` without plaintext password)
-    const firestoreSafeUser = { ...user };
+    const firestoreSafeUser = { ...user, platform: 'al_motafalsifa' };
     delete (firestoreSafeUser as any).password;
     try {
       await setDoc(doc(db, 'users', user.id), firestoreSafeUser, { merge: true });
@@ -1548,8 +1573,8 @@ export async function saveSingleUserToServer(user: User): Promise<boolean> {
       // 3. Fallback direct REST write to users/{id} with auth token
       if (idToken) {
         try {
-          const apiKey = "AIzaSyAn6z4sDy1_sF-YmkLjA0Z1TQwU_iLClf4";
-          const projectId = "qalbalelm";
+          const apiKey = "AIzaSyDdwnLfJbsQ8hbXP-CzocjaejmvYC4FOh4";
+          const projectId = "alesraa-academy";
           const restUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users/${encodeURIComponent(user.id)}?key=${apiKey}`;
           const fieldsObj: Record<string, any> = {};
           for (const [k, v] of Object.entries(firestoreSafeUser)) {
@@ -1607,6 +1632,57 @@ export function saveAccessCodes(codes: CourseAccessCode[]) {
     setSecureCache(STORAGE_KEYS.ACCESS_CODES, codes);
   }
   saveToFirebase("accessCodes", codes);
+  saveToFirebase("access_codes", codes);
+  (async () => {
+    try {
+      const headers = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
+      await fetch('/api/access-codes/save', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ codes }),
+      });
+    } catch {}
+  })();
+}
+
+export async function fetchAccessCodesFromServer(): Promise<CourseAccessCode[]> {
+  try {
+    const activeUser = getCurrentUser();
+    const isPriv = activeUser?.role === 'admin' || activeUser?.role === 'teacher';
+    const headers = await getClientAuthHeaders();
+    const [serverRes, fbData] = await Promise.all([
+      isPriv ? fetch('/api/access-codes', { headers }).then((r) => (r.ok ? r.json() : null)).catch(() => null) : Promise.resolve(null),
+      isPriv ? loadFromFirebase('accessCodes', false).catch(() => null) : Promise.resolve(null),
+    ]);
+    const map = new Map<string, CourseAccessCode>();
+    const local = getSavedAccessCodes();
+    local.forEach((c) => {
+      if (c?.code) map.set(c.code.toUpperCase(), c);
+    });
+    if (Array.isArray(fbData)) {
+      fbData.forEach((c: CourseAccessCode) => {
+        if (c?.code) {
+          const existing = map.get(c.code.toUpperCase());
+          map.set(c.code.toUpperCase(), existing?.isUsed ? existing : c);
+        }
+      });
+    }
+    if (serverRes && Array.isArray(serverRes.codes)) {
+      serverRes.codes.forEach((c: CourseAccessCode) => {
+        if (c?.code) {
+          const existing = map.get(c.code.toUpperCase());
+          map.set(c.code.toUpperCase(), existing?.isUsed ? existing : c);
+        }
+      });
+    }
+    const merged = Array.from(map.values());
+    if (merged.length > 0) {
+      setSecureCache(STORAGE_KEYS.ACCESS_CODES, merged);
+    }
+    return merged;
+  } catch {
+    return getSavedAccessCodes();
+  }
 }
 
 export function getSavedWalletCodes(): WalletRechargeCode[] {
@@ -1622,9 +1698,7 @@ export function saveWalletCodes(codes: WalletRechargeCode[]) {
   saveToFirebase("wallet_codes", codes);
   (async () => {
     try {
-      const idToken = await auth.currentUser?.getIdToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
+      const headers = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
       await fetch('/api/wallet/codes/save', {
         method: 'POST',
         headers,
@@ -1636,9 +1710,12 @@ export function saveWalletCodes(codes: WalletRechargeCode[]) {
 
 export async function fetchWalletCodesFromServer(): Promise<WalletRechargeCode[]> {
   try {
+    const activeUser = getCurrentUser();
+    const isPriv = activeUser?.role === 'admin' || activeUser?.role === 'teacher';
+    const headers = await getClientAuthHeaders();
     const [serverRes, fbData] = await Promise.all([
-      fetch('/api/wallet/codes').then((r) => (r.ok ? r.json() : null)).catch(() => null),
-      loadFromFirebase('wallet_codes', false).catch(() => null),
+      isPriv ? fetch('/api/wallet/codes', { headers }).then((r) => (r.ok ? r.json() : null)).catch(() => null) : Promise.resolve(null),
+      isPriv ? loadFromFirebase('wallet_codes', false).catch(() => null) : Promise.resolve(null),
     ]);
     const map = new Map<string, WalletRechargeCode>();
     const local = getSavedWalletCodes();
@@ -1694,7 +1771,7 @@ export async function redeemStudentWalletCode(
   try {
     const res = await fetch('/api/wallet/redeem', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await getClientAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         code: cleanCode,
         studentId: student.id,
@@ -1856,11 +1933,15 @@ export function getSavedSubmissions(): StudentExamSubmission[] {
 export function saveSubmissions(submissions: StudentExamSubmission[]) {
   const deduped = deduplicateSubmissions(submissions);
   setSecureCache(STORAGE_KEYS.SUBMISSIONS, deduped);
-  fetch('/api/submissions/save', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ submissions: deduped.slice(0, 50) }),
-  }).catch(() => {});
+  getClientAuthHeaders({ 'Content-Type': 'application/json' })
+    .then((headers) =>
+      fetch('/api/submissions/save', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ submissions: deduped.slice(0, 50) }),
+      })
+    )
+    .catch(() => {});
   saveToFirebase("submissions", deduped);
 }
 
@@ -1881,13 +1962,17 @@ export function saveNotifications(notifications: PlatformNotification[]) {
   const cleaned = (notifications || []).filter((n) => n && n.id && !deletedIds.includes(n.id));
   setSecureCache(STORAGE_KEYS.NOTIFICATIONS, cleaned);
   saveToFirebase("notifications", cleaned);
-  fetch('/api/notifications', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ notifications: cleaned }),
-  }).catch(() => {});
+  getClientAuthHeaders({ 'Content-Type': 'application/json' })
+    .then((headers) =>
+      fetch('/api/notifications', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ notifications: cleaned }),
+      })
+    )
+    .catch(() => {});
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('qalb_alam_notifications_updated', { detail: cleaned }));
+    window.dispatchEvent(new CustomEvent('al_motafalsifa_notifications_updated', { detail: cleaned }));
   }
 }
 
@@ -1915,12 +2000,7 @@ export function saveUsers(users: User[]) {
   // 2. ALWAYS sync to server backend /api/users/save so server disk stays strictly in sync
   (async () => {
     try {
-      let idToken: string | undefined;
-      try {
-        idToken = await auth.currentUser?.getIdToken();
-      } catch {}
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
+      const headers = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
       await fetch('/api/users/save', {
         method: 'POST',
         headers,
@@ -1934,6 +2014,15 @@ export function saveUsers(users: User[]) {
 
 export function getCurrentUser(): User | null {
   try {
+    const rawLocal = localStorage.getItem('al_motafalsifa_current_user');
+    if (rawLocal) {
+      try {
+        const parsed = JSON.parse(rawLocal);
+        if (parsed && parsed.id && !isDemoOrDeletedUser(parsed)) {
+          return parsed;
+        }
+      } catch {}
+    }
     const cached = getSecureCache<User>(STORAGE_KEYS.CURRENT_USER);
     if (cached.data && cached.data.id && !isDemoOrDeletedUser(cached.data)) {
       return cached.data;
@@ -1946,20 +2035,23 @@ export function saveCurrentUser(user: User | null) {
   try {
     if (!user || !user.id || isDemoOrDeletedUser(user)) {
       removeSecureCache(STORAGE_KEYS.CURRENT_USER);
+      localStorage.removeItem('al_motafalsifa_current_user');
     } else {
       const safeUser = { ...user };
       delete (safeUser as any).password;
       setSecureCache(STORAGE_KEYS.CURRENT_USER, safeUser);
+      localStorage.setItem('al_motafalsifa_current_user', JSON.stringify(safeUser));
     }
   } catch (e) {}
 }
+
 
 // === STUDENT ENROLLED COURSES PERSISTENCE (AES-256 Encrypted) ===
 
 export function getStudentEnrolledCourses(studentId?: string): string[] {
   if (!studentId) return [];
   try {
-    const cached = getSecureCache<string[]>(`qalb_alam_enrolled_courses_${studentId}`);
+    const cached = getSecureCache<string[]>(`al_motafalsifa_enrolled_courses_${studentId}`);
     if (Array.isArray(cached.data)) {
       return cached.data.filter(Boolean);
     }
@@ -1971,7 +2063,7 @@ export function saveStudentEnrolledCourses(studentId: string, courseIds: string[
   if (!studentId) return;
   try {
     const uniqueList = Array.from(new Set(courseIds.filter(Boolean)));
-    setSecureCache(`qalb_alam_enrolled_courses_${studentId}`, uniqueList);
+    setSecureCache(`al_motafalsifa_enrolled_courses_${studentId}`, uniqueList);
   } catch (e) {}
 }
 
@@ -2041,8 +2133,9 @@ export async function loadAllFromFirebase() {
   let fbExams: any = null;
 
   try {
+    const authHeaders = await getClientAuthHeaders();
     const serverFetchPromise = Promise.race([
-      fetch('/api/platform-data')
+      fetch('/api/platform-data', { headers: authHeaders })
         .then((r) => (r.ok ? r.json() : null))
         .catch(() => null)
         .then(async (res) => {
@@ -2082,13 +2175,15 @@ export async function loadAllFromFirebase() {
 
   if (serverCourses.length === 0) {
     try {
-      const scRes = await fetch('/api/courses').then((r) => (r.ok ? r.json() : null)).catch(() => null);
+      const authHeaders = await getClientAuthHeaders();
+      const scRes = await fetch('/api/courses', { headers: authHeaders }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
       if (scRes && Array.isArray(scRes.courses)) serverCourses = scRes.courses;
     } catch {}
   }
   if (serverExams.length === 0) {
     try {
-      const seRes = await fetch('/api/exams').then((r) => (r.ok ? r.json() : null)).catch(() => null);
+      const authHeaders = await getClientAuthHeaders();
+      const seRes = await fetch('/api/exams', { headers: authHeaders }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
       if (seRes && Array.isArray(seRes.exams)) serverExams = seRes.exams;
     } catch {}
   }
@@ -2243,10 +2338,11 @@ export async function loadAllFromFirebase() {
       });
     }
 
-    // 2.5 Merge with server users (/api/users) only if serverUsers was empty
-    if (serverUsers.length === 0) {
+    // 2.5 Merge with server users (/api/users) for privileged staff only
+    if (isPrivileged && serverUsers.length === 0) {
       try {
-        const serverUsersRes = await fetch('/api/users').then((r) => (r.ok ? r.json() : null)).catch(() => null);
+        const headers = await getClientAuthHeaders();
+        const serverUsersRes = await fetch('/api/users', { headers }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
         if (serverUsersRes && Array.isArray(serverUsersRes.users)) {
           serverUsersRes.users.forEach((u: any) => {
             if (u?.id && !isDemoOrDeletedUser(u)) {
@@ -2299,7 +2395,7 @@ export async function loadAllFromFirebase() {
     if (fbSubmissions) setSecureCache(STORAGE_KEYS.SUBMISSIONS, fbSubmissions);
     setSecureCache(STORAGE_KEYS.NOTIFICATIONS, finalNotifications);
     if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('qalb_alam_notifications_updated', { detail: finalNotifications }));
+      window.dispatchEvent(new CustomEvent('al_motafalsifa_notifications_updated', { detail: finalNotifications }));
     }
   } catch (e) {}
 
@@ -2325,7 +2421,7 @@ export function subscribeToFirebaseRealtime(callbacks: {
 
   try {
     if (callbacks.onCourses) {
-      const unsub = onSnapshot(doc(db, "qalbalelm_data", "courses"), (snap) => {
+      const unsub = onSnapshot(doc(db, "al_motafalsifa_data", "courses"), (snap) => {
         if (snap.exists()) {
           const data = snap.data()?.data;
           if (Array.isArray(data)) {
@@ -2354,7 +2450,7 @@ export function subscribeToFirebaseRealtime(callbacks: {
         }
       }, (err) => {
         console.warn("Firestore courses snapshot error:", err);
-        notifyCloudStatus('error', err?.message);
+        // notifyCloudStatus('error', err?.message);
       });
       unsubs.push(unsub);
     }
@@ -2411,10 +2507,10 @@ export function subscribeToFirebaseRealtime(callbacks: {
             console.warn("Error setting up users collection snapshot:", e);
           }
 
-          // 2. Secondary fallback listener on qalbalelm_data/users
+          // 2. Secondary fallback listener on al_motafalsifa_data/users
           try {
             const unsub = onSnapshot(
-              doc(db, "qalbalelm_data", "users"),
+              doc(db, "al_motafalsifa_data", "users"),
               (snap) => {
                 if (snap.exists()) {
                   const data = snap.data()?.data;
@@ -2465,7 +2561,7 @@ export function subscribeToFirebaseRealtime(callbacks: {
     }
 
     if (callbacks.onSettings) {
-      const unsub = onSnapshot(doc(db, "qalbalelm_data", "settings"), (snap) => {
+      const unsub = onSnapshot(doc(db, "al_motafalsifa_data", "settings"), (snap) => {
         if (snap.exists()) {
           const data = snap.data()?.data;
           if (data && data.platformName) {
@@ -2480,7 +2576,7 @@ export function subscribeToFirebaseRealtime(callbacks: {
     }
 
     if (callbacks.onCompetitions) {
-      const unsub = onSnapshot(doc(db, "qalbalelm_data", "competitions"), (snap) => {
+      const unsub = onSnapshot(doc(db, "al_motafalsifa_data", "competitions"), (snap) => {
         if (snap.exists()) {
           const data = snap.data()?.data;
           if (Array.isArray(data)) {
@@ -2495,7 +2591,7 @@ export function subscribeToFirebaseRealtime(callbacks: {
     }
 
     if (callbacks.onNotifications) {
-      const unsub = onSnapshot(doc(db, "qalbalelm_data", "notifications"), (snap) => {
+      const unsub = onSnapshot(doc(db, "al_motafalsifa_data", "notifications"), (snap) => {
         if (snap.exists()) {
           const data = snap.data()?.data;
           if (Array.isArray(data)) {
@@ -2505,7 +2601,7 @@ export function subscribeToFirebaseRealtime(callbacks: {
             callbacks.onNotifications!(cleanNotifs);
             setSecureCache(STORAGE_KEYS.NOTIFICATIONS, cleanNotifs);
             if (typeof window !== 'undefined') {
-              window.dispatchEvent(new CustomEvent('qalb_alam_notifications_updated', { detail: cleanNotifs }));
+              window.dispatchEvent(new CustomEvent('al_motafalsifa_notifications_updated', { detail: cleanNotifs }));
             }
             notifyCloudStatus('connected', null);
           }
@@ -2517,7 +2613,7 @@ export function subscribeToFirebaseRealtime(callbacks: {
     }
   } catch (err: any) {
     console.warn("Error setting up Firestore snapshots", err);
-    notifyCloudStatus('error', err?.message);
+    // notifyCloudStatus('error', err?.message);
   }
 
   return () => {

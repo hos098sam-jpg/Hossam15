@@ -26,7 +26,7 @@ interface ForumViewProps {
   onOpenAuth: (mode?: 'login' | 'signup' | 'parent') => void;
 }
 
-const STORAGE_KEY_FORUM = 'qalb_alam_forum_posts_live';
+const STORAGE_KEY_FORUM = 'al_motafalsifa_forum_posts_live';
 
 const INITIAL_FORUM_POSTS: ForumPost[] = [
   {
@@ -70,7 +70,7 @@ const INITIAL_FORUM_POSTS: ForumPost[] = [
     title: 'سؤال في مسائل الاتزان الكيميائي وقوانين لوشاتيليه 🧪',
     content: 'يا شباب وأستاذنا الفاضل، عندي استفسار في تأثير زيادة الضغط على التفاعل الغازي لما يكون عدد مولات المتفاعلات مساوياً لعدد مولات النواتج. هل يؤثر على موضع الاتزان أو قيمة ثابت الاتزان؟',
     category: 'academic',
-    subjectName: 'الكيمياء',
+    subjectName: 'الفلسفة والمنطق',
     authorId: 'student-seed-2',
     authorName: 'مريم أحمد عبد الرحمن',
     authorRole: 'student',
@@ -607,7 +607,7 @@ export const ForumView: React.FC<ForumViewProps> = ({ currentUser, onOpenAuth })
                 </div>
                 <div>
                   <h3 className="text-sm font-black text-slate-900 dark:text-white">طرح سؤال أو موضوع جديد</h3>
-                  <p className="text-[11px] text-slate-500">منتدى منصة قلب العلم التعليمية</p>
+                  <p className="text-[11px] text-slate-500">منتدى منصة المتفلسفة  التعليمية</p>
                 </div>
               </div>
               <button
@@ -648,7 +648,7 @@ export const ForumView: React.FC<ForumViewProps> = ({ currentUser, onOpenAuth })
                     <option value="اللغة الإنجليزية">اللغة الإنجليزية</option>
                     <option value="الرياضيات">الرياضيات</option>
                     <option value="الفيزياء">الفيزياء</option>
-                    <option value="الكيمياء">الكيمياء</option>
+                    <option value="الفلسفة والمنطق">الفلسفة والمنطق</option>
                     <option value="الأحياء">الأحياء</option>
                     <option value="الجيولوجيا">الجيولوجيا</option>
                     <option value="التاريخ والجغرافيا">التاريخ والجغرافيا</option>

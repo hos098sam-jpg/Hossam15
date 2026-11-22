@@ -21,6 +21,7 @@ import {
   Layers
 } from 'lucide-react';
 import { User } from '../types';
+import { getClientAuthHeaders } from '../utils/authToken';
 
 interface FlutterMobileAppPreviewModalProps {
   isOpen: boolean;
@@ -52,9 +53,11 @@ export const FlutterMobileAppPreviewModal: React.FC<FlutterMobileAppPreviewModal
   const fetchMobileDashboard = async () => {
     setIsLoading(true);
     try {
-      const studentId = currentUser?.id || 'demo_student_2027';
+      if (!currentUser?.id) return;
+      const studentId = currentUser.id;
+      const headers = await getClientAuthHeaders();
       const res = await fetch(`/api/mobile/dashboard?studentId=${encodeURIComponent(studentId)}`, {
-        headers: { 'x-student-id': studentId }
+        headers,
       });
       if (res.ok) {
         const data = await res.json();
@@ -81,13 +84,14 @@ export const FlutterMobileAppPreviewModal: React.FC<FlutterMobileAppPreviewModal
   // Real-time API: Update Video Progress
   const handleUpdateProgress = async (newPos: number, completed = false) => {
     setVideoProgress(newPos);
-    if (!dashboardData?.lastLesson) return;
+    if (!dashboardData?.lastLesson || !currentUser?.id) return;
     try {
+      const headers = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
       await fetch('/api/mobile/progress/update', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
-          studentId: currentUser?.id || 'demo_student_2027',
+          studentId: currentUser.id,
           courseId: dashboardData.lastLesson.courseId,
           lessonId: dashboardData.lastLesson.lessonId,
           videoId: dashboardData.lastLesson.videoId,
@@ -101,15 +105,17 @@ export const FlutterMobileAppPreviewModal: React.FC<FlutterMobileAppPreviewModal
 
   // Real-time API: Submit Exam
   const handleSubmitExam = async () => {
+    if (!currentUser?.id || !selectedExam?.id) return;
     setIsSubmittingExam(true);
     try {
       const examId = selectedExam?.id || 'exam_unit1_history';
       const courseId = selectedExam?.courseId || dashboardData?.lastLesson?.courseId || 'course-1792304762232';
+      const headers = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
       const res = await fetch('/api/mobile/exams/submit', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
-          studentId: currentUser?.id || 'demo_student_2027',
+          studentId: currentUser.id,
           examId,
           courseId,
           answers: examAnswers,
@@ -122,8 +128,8 @@ export const FlutterMobileAppPreviewModal: React.FC<FlutterMobileAppPreviewModal
         // Refresh dashboard so the score appears on the mobile home screen immediately
         fetchMobileDashboard();
       }
-    } catch (e) {
-      alert('فشل تسليم الامتحان');
+    } catch {
+      setExamResult({ error: 'تعذر تسليم الامتحان حالياً' });
     } finally {
       setIsSubmittingExam(false);
     }
@@ -195,10 +201,8 @@ export const FlutterMobileAppPreviewModal: React.FC<FlutterMobileAppPreviewModal
             </div>
 
             <a
-              href="https://raw.githubusercontent.com/hos098sam-jpg/x3bb48b-c76c300b/main/flutter_app.zip"
-              target="_blank"
-              rel="noopener noreferrer"
-              download="qalbalelm_flutter_app.zip"
+              href="/api/mobile/download-zip"
+              download="al_motafalsifa_flutter_app.zip"
               className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm"
               title="تحميل كود تطبيق Flutter بالكامل (ZIP)"
             >
@@ -242,7 +246,7 @@ export const FlutterMobileAppPreviewModal: React.FC<FlutterMobileAppPreviewModal
                   >
                     <Menu className="w-4 h-4" />
                   </button>
-                  <span className="font-black text-sm text-white tracking-tight">منصة قلب العلم</span>
+                  <span className="font-black text-sm text-white tracking-tight">منصة المتفلسفة </span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <button
@@ -440,44 +444,7 @@ export const FlutterMobileAppPreviewModal: React.FC<FlutterMobileAppPreviewModal
                       </div>
                     </div>
 
-                    {/* Take Quiz shortcut */}
-                    <div className="p-3 rounded-xl bg-cyan-950/30 border border-cyan-800/40 flex items-center justify-between">
-                      <div>
-                        <p className="text-xs font-bold text-cyan-300">اختبار تجريبي فوري</p>
-                        <p className="text-[10px] text-slate-400">حل الاختبار وتظهر نتيجتك في الموقع فوراً</p>
-                      </div>
-                      <button
-                        onClick={() => {
-                          setSelectedExam({
-                            id: 'exam_history_unit1',
-                            title: 'اختبار الفصل الأول في مادة التاريخ',
-                            courseId: 'course-1792304762232',
-                            questions: [
-                              {
-                                id: 'q1',
-                                question: 'ما هو الهدف الأساسي من تأليف الوفد المصري برئاسة سعد زغلول عام 1919؟',
-                                options: ['السفر إلى باريس لعرض قضية الاستقلال', 'المطالبة بتعيين حكومة جديدة', 'إلغاء الأحكام العرفية فقط', 'تأسيس بنك مصر'],
-                                correctAnswer: 'السفر إلى باريس لعرض قضية الاستقلال',
-                                points: 10
-                              },
-                              {
-                                id: 'q2',
-                                question: 'ترتب على تصريح 28 فبراير 1922 إعلان مصر دولة مستقلة ذات سيادة مع تحفظات أربعة.',
-                                options: ['صحيح', 'خطأ'],
-                                correctAnswer: 'صحيح',
-                                points: 10
-                              }
-                            ]
-                          });
-                          setExamResult(null);
-                          setCurrentScreen('exam');
-                        }}
-                        className="px-2.5 py-1 bg-cyan-500 text-black text-[10px] font-bold rounded-lg hover:bg-cyan-400"
-                      >
-                        بدء الاختبار
-                      </button>
-                    </div>
-                  </>
+                    </>
                 )}
 
                 {/* 2. COURSES SCREEN */}
@@ -663,7 +630,7 @@ export const FlutterMobileAppPreviewModal: React.FC<FlutterMobileAppPreviewModal
                         className="w-full bg-[#0A0E17] border border-slate-800 rounded-lg p-2 text-xs text-white"
                       />
                       <button
-                        onClick={() => alert('تم إرسال كود الشحن للمراجعة والإيداع')}
+                        onClick={() => setCurrentScreen('home')}
                         className="w-full py-1.5 bg-emerald-500 text-black font-bold text-xs rounded-lg"
                       >
                         تأكيد الشحن

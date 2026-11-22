@@ -15,6 +15,7 @@ import {
   BookOpen,
 } from 'lucide-react';
 import { Course, CourseBundle, User } from '../types';
+import { getClientAuthHeaders } from '../utils/authToken';
 
 interface CourseBundlesSectionProps {
   courses: Course[];
@@ -49,7 +50,7 @@ export const CourseBundlesSection: React.FC<CourseBundlesSectionProps> = ({
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newDescription, setNewDescription] = useState('');
-  const [newGrade, setNewGrade] = useState('الصف الثالث الثانوي');
+  const [newGrade, setNewGrade] = useState('الصف الأول الثانوي');
   const [selectedCourseIds, setSelectedCourseIds] = useState<string[]>([]);
   const [newOriginalPrice, setNewOriginalPrice] = useState(600);
   const [newBundlePrice, setNewBundlePrice] = useState(390);
@@ -65,7 +66,8 @@ export const CourseBundlesSection: React.FC<CourseBundlesSectionProps> = ({
   const fetchBundles = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/bundles');
+      const headers = await getClientAuthHeaders();
+      const res = await fetch('/api/bundles', { headers });
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data.bundles)) {
@@ -113,9 +115,10 @@ export const CourseBundlesSection: React.FC<CourseBundlesSectionProps> = ({
 
     try {
       if (paymentMethod === 'wallet') {
+        const walletHeaders = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
         const res = await fetch(`/api/bundles/${checkoutBundle.id}/subscribe-wallet`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: walletHeaders,
           body: JSON.stringify({ studentId: currentUser.id }),
         });
         const data = await res.json();
@@ -133,9 +136,10 @@ export const CourseBundlesSection: React.FC<CourseBundlesSectionProps> = ({
           setSubmitting(false);
           return;
         }
+        const orderHeaders = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
         const res = await fetch('/api/gateway/create-order', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: orderHeaders,
           body: JSON.stringify({
             studentId: currentUser.id,
             studentName: currentUser.name,
@@ -175,9 +179,10 @@ export const CourseBundlesSection: React.FC<CourseBundlesSectionProps> = ({
     if (!newTitle.trim() || selectedCourseIds.length === 0) return;
 
     try {
+      const createHeaders = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
       const res = await fetch('/api/bundles', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: createHeaders,
         body: JSON.stringify({
           title: newTitle.trim(),
           description: newDescription.trim(),
@@ -204,7 +209,8 @@ export const CourseBundlesSection: React.FC<CourseBundlesSectionProps> = ({
 
   const handleDeleteBundle = async (id: string) => {
     try {
-      const res = await fetch(`/api/bundles/${id}`, { method: 'DELETE' });
+      const delHeaders = await getClientAuthHeaders();
+      const res = await fetch(`/api/bundles/${id}`, { method: 'DELETE', headers: delHeaders });
       if (res.ok) {
         setBundles((prev) => prev.filter((b) => b.id !== id));
       }
@@ -556,7 +562,7 @@ export const CourseBundlesSection: React.FC<CourseBundlesSectionProps> = ({
                   required
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
-                  placeholder="مثال: باقة الترم الأول الشاملة - الصف الثالث الثانوي"
+                  placeholder="مثال: باقة الترم الأول في الفلسفة — الصف الأول الثانوي"
                   className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3.5 py-2.5 text-xs text-white font-bold"
                 />
               </div>

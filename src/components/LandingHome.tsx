@@ -31,11 +31,21 @@ import {
   Image as ImageIcon,
   FileText,
   Edit3,
+  Megaphone,
+  ClipboardCheck,
+  PlayCircle,
 } from 'lucide-react';
-import { PlatformSettings, Course, Competition, AppView, User, SchoolYearGrade, HomeSectionConfig, CustomHomeBlock, HeroExtraItem } from '../types';
+import learningDeskImg from '../assets/images/learning_desk_visual_1795340027547.jpg';
+import courseCoverFallback from '../assets/images/course_cover_fallback_1795340027848.jpg';
+import { PlatformSettings, Course, Competition, AppView, User, HomeSectionConfig, CustomHomeBlock, HeroExtraItem } from '../types';
 import { getStudentEnrolledCourses } from '../data/initialData';
 import { compressImageFile } from '../utils/imageUtils';
 import { SecureVideoPlayer } from './SecureVideoPlayer';
+import {
+  THEME_PRESETS,
+  applyPlatformThemeColors,
+  resetPlatformThemeColors,
+} from '../utils/themeEngine';
 
 interface LandingHomeProps {
   platformSettings: PlatformSettings;
@@ -58,10 +68,60 @@ interface LandingHomeProps {
 const DEFAULT_HOME_SECTIONS: HomeSectionConfig[] = [
   { id: 'hero', label: 'الواجهة الترحيبية الرئيسية (Hero Banner)', visible: true },
   { id: 'stats', label: 'شريط الإحصائيات السريعة للمنصة', visible: true },
-  { id: 'teachers', label: 'قسم نخبة المعلمين المعتمدين', visible: true },
   { id: 'courses', label: 'قسم استكشف الكورسات والمواد الدراسية', visible: true },
   { id: 'competitions', label: 'قسم المسابقات المجانية ولوحة الشرف', visible: true },
   { id: 'features', label: 'قسم لماذا تختار المنصة؟ (المميزات)', visible: true },
+];
+
+const PLATFORM_HIGHLIGHTS = [
+  {
+    icon: PlayCircle,
+    title: 'فيديو + ملفات + امتحانات',
+    subtitle: 'كل درس يجمع الشرح، المذكرات، والتقييم في صفحة واحدة',
+  },
+  {
+    icon: ClipboardCheck,
+    title: 'امتحانات تفاعلية بالوقت',
+    subtitle: 'تصحيح فوري للأسئلة ونتيجة مفصلة مباشرة بعد التسليم',
+  },
+  {
+    icon: ShieldCheck,
+    title: 'متابعة ولي الأمر',
+    subtitle: 'تقارير تفصيلية وربط فوري لمتابعة مستوى الطالب أولاً بأول',
+  },
+  {
+    icon: Award,
+    title: 'نظام تتابعي محكم',
+    subtitle: 'لا يُفتح الدرس التالي إلا بعد اجتياز امتحان الحصة بنجاح',
+  },
+];
+
+const WHY_CHOOSE_FEATURES = [
+  {
+    number: '01',
+    title: 'تدرج تعليمي واضح ومنظم',
+    description: 'كل كورس مقسم إلى دروس متتالية تضم الشرح بالفيديو وملفات المراجعة والامتحان التتابعي.',
+  },
+  {
+    number: '02',
+    title: 'تصحيح فوري + مراجعة المقالي بالصور',
+    description: 'تحصل على نتيجتك في الأسئلة الاختيارية فور التسليم، مع تصحيح المعلمة للأسئلة المقالية.',
+  },
+  {
+    number: '03',
+    title: 'حماية المحتوى وأكواد تفعيل خاصة',
+    description: 'تفعيل سريع وآمن للكورسات عبر المحفظة، فودافون كاش، إنستا باي، أو أكواد الاشتراك.',
+  },
+  {
+    number: '04',
+    title: 'تقارير دورية لولي الأمر',
+    description: 'متابعة دقيقة لدرجات الطالب وحضوره وإرسال التقارير مباشرة لولي الأمر.',
+  },
+  {
+    number: '05',
+    title: 'تصميم مريح يدعم الوضع الليلي والنهاري',
+    description: 'واجهة عربية واضحة بدون تشتيت مع خطوط مخصصة للقراءة والتركيز طوال المذاكرة.',
+  },
 ];
 
 const ScrollRevealItem: React.FC<{
@@ -118,7 +178,9 @@ const ScrollRevealItem: React.FC<{
       } ${className}`}
     >
       {children}
-    </div>
+
+            
+          </div>
   );
 };
 
@@ -139,10 +201,36 @@ export const LandingHome: React.FC<LandingHomeProps> = ({
   onSaveVisualSettings,
   onExitVisualEditMode,
 }) => {
-  const [selectedGradeFilter, setSelectedGradeFilter] = useState<'all' | 'primary' | 'prep' | 'secondary' | SchoolYearGrade>('all');
   const [draftSettings, setDraftSettings] = useState<PlatformSettings>(platformSettings);
   const [saveToast, setSaveToast] = useState<string | null>(null);
-  const [teacherPendingDelete, setTeacherPendingDelete] = useState<User | null>(null);
+  const [showColorPickerModal, setShowColorPickerModal] = useState(false);
+  const [customPrimaryColor, setCustomPrimaryColor] = useState(() => localStorage.getItem('sozan_primary_color') || '#d4af37');
+  const [customBgColor, setCustomBgColor] = useState(() => localStorage.getItem('sozan_bg_color') || '#0d0824');
+  const [customTextColor, setCustomTextColor] = useState(() => localStorage.getItem('sozan_text_color') || '#ffffff');
+
+  const applyColors = (pColor: string, bColor: string, tColor: string) => {
+    if (!isVisualEditMode) return;
+    setCustomPrimaryColor(pColor);
+    setCustomBgColor(bColor);
+    setCustomTextColor(tColor);
+    const applied = applyPlatformThemeColors(pColor, bColor, tColor, true);
+    const updatedSettings: PlatformSettings = {
+      ...draftSettings,
+      customTheme: {
+        enabled: true,
+        primaryColor: applied.primaryColor,
+        bgColor: applied.bgColor,
+        textColor: applied.textColor,
+        updatedAt: Date.now(),
+      },
+    };
+    setDraftSettings(updatedSettings);
+    if (onSaveVisualSettings) {
+      onSaveVisualSettings(updatedSettings);
+    }
+    setSaveToast('✅ تم تطبيق وتخصيص ألوان المنصة بالكامل بنجاح للجميع!');
+    setTimeout(() => setSaveToast(null), 3000);
+  };
 
   // Sub-editor states inside visual mode (so original layout stays 100% intact until clicked)
   const [editingHeroBox, setEditingHeroBox] = useState(false);
@@ -358,7 +446,7 @@ export const LandingHome: React.FC<LandingHomeProps> = ({
   const buildSectionsList = (): HomeSectionConfig[] => {
     const base =
       activeSettings.homeSections && activeSettings.homeSections.length > 0
-        ? activeSettings.homeSections.filter((s) => s.id !== 'custom_blocks')
+        ? activeSettings.homeSections.filter((s) => s.id !== 'custom_blocks' && s.id !== 'teachers')
         : [...DEFAULT_HOME_SECTIONS];
 
     // Ensure all customBlocks are represented in the sections ordering list
@@ -515,16 +603,6 @@ export const LandingHome: React.FC<LandingHomeProps> = ({
   };
 
   const publishedCourses = courses.filter((c) => c.isPublished);
-  const filteredHomeCourses =
-    selectedGradeFilter === 'all'
-      ? publishedCourses
-      : selectedGradeFilter === 'primary'
-      ? publishedCourses.filter((c) => c.schoolYear.includes('الابتدائي'))
-      : selectedGradeFilter === 'prep'
-      ? publishedCourses.filter((c) => c.schoolYear.includes('الإعدادي'))
-      : selectedGradeFilter === 'secondary'
-      ? publishedCourses.filter((c) => c.schoolYear.includes('الثانوي') || c.schoolYear.includes('بكالوريا'))
-      : publishedCourses.filter((c) => c.schoolYear === selectedGradeFilter);
   const publishedCompetitions = competitions.filter((c) => c.isPublished);
 
   const isCourseEnrolled = (courseId: string) => {
@@ -981,34 +1059,126 @@ export const LandingHome: React.FC<LandingHomeProps> = ({
               </div>
             )}
 
-            {/* FULL HERO BANNER IMAGE WITHOUT OVERLAPPING TEXT REGION */}
+            {/* ANNOUNCEMENT BANNER + HERO BANNER CARD + 4-COLUMN HIGHLIGHTS STRIP */}
             <ScrollRevealItem delayIndex={1} disabled={isVisualEditMode}>
-              <section
-                onClick={() => !isVisualEditMode && onNavigate('courses')}
-                className="relative rounded-[40px] bg-slate-950 text-white overflow-hidden shadow-2xl border border-blue-900/40 cursor-pointer group"
-              >
-                <img
-                  src={
-                    activeSettings.heroBannerImage &&
-                    !activeSettings.heroBannerImage.includes('images.unsplash.com')
-                      ? activeSettings.heroBannerImage
-                      : '/hero-banner-qalbalelm.jpg'
-                  }
-                  alt={activeSettings.platformName || 'منصة قلب العلم'}
-                  className="w-full h-auto block object-contain"
-                  referrerPolicy="no-referrer"
-                />
-
-                {/* Optional Extra Items if Admin added any */}
-                {heroExtraItems.length > 0 && (
-                  <div
-                    onClick={(e) => e.stopPropagation()}
-                    className="p-6 sm:p-8 space-y-4 bg-slate-950/90 border-t border-white/10"
-                  >
-                    {heroExtraItems.map((it) => renderHeroExtraItemCard(it))}
+              <div className="space-y-8">
+                {activeSettings.announcementText && activeSettings.announcementText.trim() !== '' && (
+                  <div className="flex items-center gap-3 rounded-2xl border border-[#E31B23]/25 bg-[#E31B23]/5 px-4 py-3 text-xs font-semibold text-[#151515] dark:border-[#E31B23]/40 dark:bg-[#E31B23]/10 dark:text-neutral-200 sm:text-sm">
+                    <Megaphone className="h-4 w-4 shrink-0 text-[#E31B23]" />
+                    <span>{activeSettings.announcementText}</span>
                   </div>
                 )}
-              </section>
+
+                <section className="relative overflow-hidden rounded-3xl border border-[#E31B23]/40 bg-[#0B0B0F] bg-gradient-to-br from-[#1A0D11] via-[#101014] to-[#050507] px-6 pt-8 pb-6 text-white shadow-xl transition-colors dark:border-[#E31B23]/35 dark:from-[#1A0E12] dark:via-[#141418] dark:to-[#0D0D0F] sm:px-8 sm:pt-10 sm:pb-8 lg:px-10">
+                  <div className="grid grid-cols-1 items-center gap-8 md:grid-cols-[1fr_auto]">
+                    <div className="min-w-0 space-y-4 text-center md:text-right">
+                      <p className="text-xs font-bold text-amber-300/95 sm:text-sm">
+                        تحت إشراف: <span className="font-extrabold text-white">{activeSettings.supervisorName || 'أ/ سوزان كريم فهمي'}</span> — {activeSettings.supervisorTitle || 'الصف الأول الثانوي'}
+                      </p>
+                      <h1
+                        className="font-display font-black leading-[1.2] tracking-tight text-white"
+                        style={{ fontSize: 'clamp(1.75rem, 3.6vw, 2.75rem)', textWrap: 'balance' }}
+                      >
+                        منصة <span className="text-[#E31B23]">المتفلسفة</span> التعليمية
+                      </h1>
+                      <p className="mx-auto max-w-xl text-xs leading-relaxed text-neutral-300 sm:text-sm md:mx-0">
+                        {activeSettings.heroSubtitle ||
+                          'المنصة التعليمية المتكاملة لشرح مادة الفلسفة والمنطق للصف الأول الثانوي، فيديوهات عالية الجودة، مذكرات منظمة، وامتحانات إلكترونية تتابعية.'}
+                      </p>
+                      <div className="flex flex-wrap items-center justify-center gap-3 pt-2 md:justify-start">
+                        <button
+                          type="button"
+                          onClick={() => !isVisualEditMode && onNavigate('courses')}
+                          className="inline-flex h-11 shrink-0 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-[#E31B23] px-5 text-xs font-bold text-white transition-colors hover:bg-[#B5121B] sm:text-sm"
+                        >
+                          <span>استعراض الكورسات والدروس</span>
+                          <ArrowLeft className="h-4 w-4" />
+                        </button>
+                        {currentUser ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (isVisualEditMode) return;
+                              if (currentUser.role === 'admin') onNavigate('admin');
+                              else if (currentUser.role === 'teacher') onNavigate('teacher_dashboard');
+                              else if (currentUser.role === 'parent') onNavigate('parent_portal');
+                              else onNavigate('student_dashboard');
+                            }}
+                            className="inline-flex h-11 shrink-0 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-white/20 bg-white/10 px-5 text-xs font-bold text-white transition-colors hover:bg-white/15 sm:text-sm"
+                          >
+                            <span>الانتقال إلى لوحة الحساب</span>
+                          </button>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => !isVisualEditMode && onOpenAuth('signup')}
+                              className="inline-flex h-11 shrink-0 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-white/20 bg-white/10 px-5 text-xs font-bold text-white transition-colors hover:bg-white/15 sm:text-sm"
+                            >
+                              <span>إنشاء حساب طالب جديد</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => !isVisualEditMode && onOpenAuth('login')}
+                              className="inline-flex h-11 shrink-0 cursor-pointer items-center justify-center whitespace-nowrap px-3 text-xs font-bold text-neutral-200 underline-offset-4 hover:text-white hover:underline sm:text-sm"
+                            >
+                              تسجيل الدخول
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Visual Showcase with Golden Semi-Circle Backdrop */}
+                    <div className="relative mx-auto flex h-56 w-64 shrink-0 items-end justify-center sm:h-64 sm:w-72 lg:h-72 lg:w-[300px]">
+                      <div
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-x-3 bottom-0 h-40 rounded-t-full bg-gradient-to-t from-[#F59E0B] via-[#FACC15] to-[#FDE047] shadow-[0_0_50px_rgba(250,204,21,0.28)] sm:h-44 lg:h-48"
+                      />
+                      <div className="relative z-10 flex h-48 w-48 items-center justify-center overflow-hidden rounded-3xl border border-white/20 bg-[#0B0B0F]/90 p-3 shadow-[0_14px_30px_rgba(0,0,0,0.5)] sm:h-56 sm:w-56">
+                        <img
+                          src={activeSettings.heroBannerImage || '/logo.png'}
+                          alt="شعار منصة المتفلسفة الرسمي"
+                          referrerPolicy="no-referrer"
+                          className="h-full w-full object-contain transition-transform duration-300 hover:scale-[1.03]"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Optional Extra Items if Admin added any */}
+                  {heroExtraItems.length > 0 && (
+                    <div className="mt-6 space-y-4 border-t border-white/10 pt-6">
+                      {heroExtraItems.map((it) => renderHeroExtraItemCard(it))}
+                    </div>
+                  )}
+                </section>
+
+                {/* 2. Platform Structure Highlights Strip */}
+                <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  {PLATFORM_HIGHLIGHTS.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <div
+                        key={item.title}
+                        className="flex items-center gap-3.5 rounded-2xl border border-neutral-200 bg-white p-5 transition-colors dark:border-neutral-800 dark:bg-[#16161A]"
+                      >
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#E31B23]/10 text-[#E31B23]">
+                          <Icon className="h-5 w-5" />
+                        </div>
+                        <div className="min-w-0">
+                          <h2 className="font-display text-sm font-bold text-[#151515] dark:text-white">
+                            {item.title}
+                          </h2>
+                          <p className="mt-0.5 text-xs text-neutral-600 dark:text-neutral-400">
+                            {item.subtitle}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </section>
+              </div>
             </ScrollRevealItem>
           </div>
         );
@@ -1017,18 +1187,18 @@ export const LandingHome: React.FC<LandingHomeProps> = ({
         return (
           <div key="stats" className={wrapperClass}>
             {renderAdminControls()}
-            <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
               {statsList.map((stat, idx) => (
                 <ScrollRevealItem
                   key={idx}
                   delayIndex={idx + 1}
                   disabled={isVisualEditMode}
-                  className="bg-white border border-slate-200/90 rounded-3xl p-6 flex items-center gap-4 shadow-xs"
+                  className="flex items-center gap-4 rounded-2xl border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-[#16161A]"
                 >
-                  <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-700 flex items-center justify-center shrink-0">
-                    {idx === 0 ? <BookOpen className="w-6 h-6" /> : idx === 1 ? <Layers className="w-6 h-6" /> : idx === 2 ? <Trophy className="w-6 h-6" /> : <TrendingUp className="w-6 h-6" />}
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#1769D2]/10 text-[#1769D2]">
+                    {idx === 0 ? <BookOpen className="h-5 w-5" /> : idx === 1 ? <Layers className="h-5 w-5" /> : idx === 2 ? <Trophy className="h-5 w-5" /> : <TrendingUp className="h-5 w-5" />}
                   </div>
-                  <div className="flex-1 min-w-0">
+                  <div className="min-w-0 flex-1">
                     {isVisualEditMode ? (
                       <div className="space-y-1">
                         <input
@@ -1039,7 +1209,7 @@ export const LandingHome: React.FC<LandingHomeProps> = ({
                             nextStats[idx] = { ...nextStats[idx], value: e.target.value };
                             setDraftSettings({ ...draftSettings, customStats: nextStats });
                           }}
-                          className="w-full px-2 py-1 rounded border border-slate-300 text-sm font-black text-slate-900"
+                          className="w-full rounded border border-neutral-300 px-2 py-1 text-sm font-black text-[#151515]"
                         />
                         <input
                           type="text"
@@ -1049,13 +1219,13 @@ export const LandingHome: React.FC<LandingHomeProps> = ({
                             nextStats[idx] = { ...nextStats[idx], label: e.target.value };
                             setDraftSettings({ ...draftSettings, customStats: nextStats });
                           }}
-                          className="w-full px-2 py-1 rounded border border-slate-300 text-[10px] font-bold text-slate-600"
+                          className="w-full rounded border border-neutral-300 px-2 py-1 text-[10px] font-bold text-neutral-600"
                         />
                       </div>
                     ) : (
                       <>
-                        <div className="text-2xl font-black text-slate-900">{stat.value}</div>
-                        <div className="text-xs text-slate-500 font-bold">{stat.label}</div>
+                        <div className="font-mono-num text-2xl font-black text-[#151515] dark:text-white">{stat.value}</div>
+                        <div className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">{stat.label}</div>
                       </>
                     )}
                   </div>
@@ -1066,254 +1236,51 @@ export const LandingHome: React.FC<LandingHomeProps> = ({
         );
 
       case 'teachers':
-        if (teachers.length === 0 && !isVisualEditMode) return null;
-        return (
-          <div key="teachers" className={wrapperClass}>
-            {renderAdminControls()}
-            <section className="space-y-6">
-              <ScrollRevealItem disabled={isVisualEditMode}>
-                <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-                  <div>
-                    <div className="inline-flex items-center gap-2 text-xs font-black text-indigo-700 bg-indigo-50 px-3.5 py-1.5 rounded-full mb-2 border border-indigo-100">
-                      <GraduationCap className="w-3.5 h-3.5" />
-                      <span>نخبة المعلمين والأساتذة المعتمدين</span>
-                    </div>
-                    <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white">
-                      {activeSettings.teachersSectionTitle || 'اختر معلمك وتابع أقوى الشروحات والكورسات'}
-                    </h2>
-                    <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-                      {activeSettings.teachersSectionSubtitle || 'اضغط على بطاقة المعلم لاستعراض ملفه الأكاديمي وجميع كورساته المنشورة على المنصة'}
-                    </p>
-                  </div>
-                </div>
-              </ScrollRevealItem>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {teachers.map((teacher, idx) => {
-                  const teacherCourseCount = publishedCourses.filter(
-                    (c) =>
-                      c.instructorId === teacher.id ||
-                      c.instructor === teacher.name ||
-                      c.teacherName === teacher.name
-                  ).length;
-
-                  return (
-                    <ScrollRevealItem
-                      key={teacher.id}
-                      delayIndex={(idx % 3) + 1}
-                      disabled={isVisualEditMode}
-                    >
-                      <div
-                        onClick={() => !isVisualEditMode && onSelectTeacher?.(teacher)}
-                        className="group h-full bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-[32px] p-6 shadow-xs hover:shadow-xl hover:border-indigo-400 transition-all cursor-pointer flex flex-col justify-between gap-5 relative overflow-hidden"
-                      >
-                        <div className="flex items-center gap-4">
-                          <div className="relative w-20 h-20 rounded-3xl overflow-hidden bg-slate-100 border-2 border-indigo-100 shrink-0 shadow-md group-hover:scale-105 transition-transform">
-                            <img
-                              src={
-                                teacher.avatarUrl ||
-                                'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=400&auto=format&fit=crop'
-                              }
-                              alt={teacher.name}
-                              className="w-full h-full object-cover"
-                              referrerPolicy="no-referrer"
-                            />
-                            <div className="absolute bottom-1 right-1 w-3.5 h-3.5 bg-emerald-500 rounded-full border-2 border-white" />
-                          </div>
-
-                          <div className="space-y-1.5 flex-1 min-w-0">
-                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border text-[10px] font-black ${
-                              teacher.gender === 'أنثى'
-                                ? 'bg-pink-50 text-pink-800 border-pink-200'
-                                : 'bg-amber-50 text-amber-800 border-amber-200'
-                            }`}>
-                              <Award className={`w-3 h-3 ${teacher.gender === 'أنثى' ? 'text-pink-500' : 'text-amber-500'}`} />
-                              <span>{teacher.gender === 'أنثى' ? '👩‍🏫 معلمة معتمدة بالمنصة' : '👨‍🏫 معلم معتمد بالمنصة'}</span>
-                            </span>
-                            <h3 className="text-lg font-black text-slate-900 dark:text-white group-hover:text-indigo-600 transition-colors truncate">
-                              {teacher.name}
-                            </h3>
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <span className="text-xs font-bold text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded-lg">
-                                📚 {teacher.subject || 'مادة علمية'}
-                              </span>
-                              {teacher.schoolYear && (
-                                <span className="text-[11px] font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-lg border border-purple-100">
-                                  🎓 {teacher.schoolYear}
-                                </span>
-                              )}
-                              {teacher.specialty &&
-                                !(teacher.schoolYear?.includes('الابتدائي') || teacher.schoolYear?.includes('الإعدادي')) && (
-                                <span className="text-[11px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-lg">
-                                  🎯 {teacher.specialty}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
-                          <div className="text-xs font-bold text-slate-600 dark:text-slate-300">
-                            الكورسات المنشورة:{' '}
-                            <span className="font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200">
-                              {teacherCourseCount} كورس
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            {currentUser?.role === 'admin' && onDeleteTeacher && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setTeacherPendingDelete(teacher);
-                                }}
-                                className="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white border border-rose-200 hover:border-rose-600 font-black text-xs transition-all flex items-center gap-1 cursor-pointer"
-                                title="حذف المدرس وكورساته نهائياً"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                                <span>حذف المدرس 🗑️</span>
-                              </button>
-                            )}
-                            <span className="px-4 py-2 rounded-xl bg-slate-900 group-hover:bg-indigo-600 text-white font-black text-xs transition-colors flex items-center gap-1.5 shadow-xs">
-                              <span>استعراض الكورسات</span>
-                              <ArrowLeft className="w-3.5 h-3.5" />
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </ScrollRevealItem>
-                  );
-                })}
-              </div>
-
-              {teacherPendingDelete && (
-                <div
-                  onClick={() => setTeacherPendingDelete(null)}
-                  className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn"
-                >
-                  <div
-                    onClick={(e) => e.stopPropagation()}
-                    className="bg-white border border-slate-200 rounded-[28px] w-full max-w-md shadow-2xl p-6 space-y-4 text-right"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-11 h-11 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
-                        <Trash2 className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h4 className="text-base font-black text-slate-900">تأكيد حذف المدرس وكورساته</h4>
-                        <p className="text-xs text-slate-500">سيتم حذف حساب المدرس وجميع كورساته من المنصة نهائياً</p>
-                      </div>
-                    </div>
-                    <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-xs font-bold text-rose-900">
-                      هل أنت متأكد من حذف حساب <strong>{teacherPendingDelete.name}</strong> وجميع الكورسات الخاصة به؟
-                    </div>
-                    <div className="flex items-center justify-end gap-2 pt-2">
-                      <button
-                        type="button"
-                        onClick={() => setTeacherPendingDelete(null)}
-                        className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-black text-xs cursor-pointer"
-                      >
-                        إلغاء
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const target = teacherPendingDelete;
-                          setTeacherPendingDelete(null);
-                          onDeleteTeacher?.(target);
-                        }}
-                        className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs flex items-center gap-1.5 shadow-md cursor-pointer"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                        <span>تأكيد الحذف النهائي 🗑️</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </section>
-          </div>
-        );
+        return null;
 
       case 'courses':
         return (
           <div key="courses" className={wrapperClass}>
             {renderAdminControls()}
-            <section className="space-y-6">
-              <ScrollRevealItem disabled={isVisualEditMode}>
-                <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-                  <div>
-                    <div className="inline-flex items-center gap-2 text-xs font-black text-indigo-700 bg-indigo-50 px-3.5 py-1.5 rounded-full mb-2 border border-indigo-100">
-                      <BookOpen className="w-3.5 h-3.5" />
-                      <span>الكورسات والمواد الدراسية</span>
-                    </div>
-                    <h2 className="text-2xl sm:text-3xl font-black text-slate-900">
-                      {activeSettings.coursesSectionTitle || 'استكشف الكورسات حسب صفك الدراسي'}
-                    </h2>
-                    <p className="text-xs sm:text-sm text-slate-500 mt-1">
-                      {activeSettings.coursesSectionSubtitle || 'اختر سنتك الدراسية وتصفح الكورسات المتكاملة وبنوك الامتحانات المتسلسلة'}
-                    </p>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2 bg-white p-2 rounded-2xl border border-slate-200 shadow-2xs">
-                    {(
-                      [
-                        { id: 'all', label: 'جميع الصفوف' },
-                        { id: 'primary', label: 'الابتدائية (1-6)' },
-                        { id: 'prep', label: 'الإعدادية (1-3)' },
-                        { id: 'secondary', label: 'الثانوية (1-3)' },
-                      ] as const
-                    ).map((tab) => (
-                      <button
-                        key={tab.id}
-                        onClick={() => setSelectedGradeFilter(tab.id)}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
-                          selectedGradeFilter === tab.id
-                            ? 'bg-slate-900 text-white shadow-xs'
-                            : 'text-slate-600 hover:bg-slate-100'
-                        }`}
-                      >
-                        {tab.label}
-                      </button>
-                    ))}
-                    <select
-                      value={selectedGradeFilter}
-                      onChange={(e) => setSelectedGradeFilter(e.target.value as any)}
-                      className="px-3 py-1.5 rounded-xl text-xs font-black bg-indigo-50 text-indigo-900 border border-indigo-200 focus:outline-none cursor-pointer"
-                    >
-                      <option value="all">اختر صفاً محدداً (1 ابتدائي - 3 ثانوي)...</option>
-                      <optgroup label="المرحلة الابتدائية">
-                        <option value="الصف الأول الابتدائي">الصف الأول الابتدائي</option>
-                        <option value="الصف الثاني الابتدائي">الصف الثاني الابتدائي</option>
-                        <option value="الصف الثالث الابتدائي">الصف الثالث الابتدائي</option>
-                        <option value="الصف الرابع الابتدائي">الصف الرابع الابتدائي</option>
-                        <option value="الصف الخامس الابتدائي">الصف الخامس الابتدائي</option>
-                        <option value="الصف السادس الابتدائي">الصف السادس الابتدائي</option>
-                      </optgroup>
-                      <optgroup label="المرحلة الإعدادية">
-                        <option value="الصف الأول الإعدادي">الصف الأول الإعدادي</option>
-                        <option value="الصف الثاني الإعدادي">الصف الثاني الإعدادي</option>
-                        <option value="الصف الثالث الإعدادي">الصف الثالث الإعدادي</option>
-                      </optgroup>
-                      <optgroup label="المرحلة الثانوية">
-                        <option value="الصف الأول الثانوي">الصف الأول الثانوي</option>
-                        <option value="الصف الثاني الثانوي">الصف الثاني الثانوي</option>
-                        <option value="الصف الثالث الثانوي">الصف الثالث الثانوي</option>
-                      </optgroup>
-                    </select>
-                  </div>
+            <section id="courses" className="space-y-6">
+              <div className="flex flex-wrap items-end justify-between gap-4 border-b border-neutral-200 pb-4 dark:border-neutral-800">
+                <div>
+                  <p className="text-xs font-bold text-[#1769D2]">
+                    المحتوى الدراسي — الصف الأول الثانوي
+                  </p>
+                  <h2 className="font-display mt-1 text-2xl font-extrabold text-[#151515] dark:text-white sm:text-3xl">
+                    {activeSettings.coursesSectionTitle || 'الكورسات والامتحانات المتاحة'}
+                  </h2>
+                  <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-400 sm:text-sm">
+                    {activeSettings.coursesSectionSubtitle ||
+                      'كل كورس مقسم إلى دروس مرتبة تضم فيديوهات الشرح والملفات والامتحانات التفاعلية.'}
+                  </p>
                 </div>
-              </ScrollRevealItem>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredHomeCourses.slice(0, 6).map((course, idx) => {
+                <button
+                  type="button"
+                  onClick={() => !isVisualEditMode && onNavigate('courses')}
+                  className="inline-flex h-10 shrink-0 cursor-pointer items-center gap-2 rounded-xl border border-neutral-300 bg-white px-4 text-xs font-bold text-[#151515] transition-colors hover:bg-[#F3F4F6] dark:border-neutral-700 dark:bg-[#16161A] dark:text-white dark:hover:bg-[#1F1F26]"
+                >
+                  <span>كافة الكورسات</span>
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {publishedCourses.slice(0, 6).map((course, idx) => {
                   const enrolled = isCourseEnrolled(course.id);
                   const totalLessonsCount = course.lessons?.length || 0;
                   const totalVideosCount =
                     course.lessons?.reduce((sum, l) => sum + (l.videos?.length || 0), 0) || 0;
+                  const totalFilesCount =
+                    course.lessons?.reduce((sum, l) => sum + (l.pdfs?.length || 0), 0) || 0;
                   const totalExamsCount =
                     (course.exams?.length || 0) +
                     (course.lessons?.reduce((sum, l) => sum + (l.exams?.length || 0), 0) || 0);
+                  const isIntegrated =
+                    course.courseType === 'integrated' || totalLessonsCount > 0;
+                  const typeLabel = isIntegrated ? 'شرح متكامل' : 'بنك امتحانات';
                   const hasDiscount =
                     typeof course.originalPrice === 'number' &&
                     course.originalPrice > course.price &&
@@ -1332,105 +1299,104 @@ export const LandingHome: React.FC<LandingHomeProps> = ({
                     >
                       <div
                         onClick={() => !isVisualEditMode && onSelectCourse(course)}
-                        className="group h-full bg-white border border-slate-200/90 rounded-[32px] overflow-hidden shadow-xs hover:shadow-xl transition-all duration-300 flex flex-col justify-between cursor-pointer"
+                        className="group flex h-full cursor-pointer flex-col justify-between overflow-hidden rounded-3xl border border-neutral-200 bg-white transition-all hover:border-[#E31B23]/60 hover:shadow-lg dark:border-neutral-800 dark:bg-[#16161A]"
                       >
                         <div>
-                          <div className="relative h-48 w-full overflow-hidden bg-slate-900">
+                          <div className="relative h-48 overflow-hidden bg-neutral-900">
                             <img
-                              src={course.coverImage}
+                              src={course.coverImage || courseCoverFallback}
                               alt={`كورس ${course.title} - ${course.schoolYear} - ${course.subject}`}
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 opacity-90"
+                              className="h-full w-full object-cover opacity-90 transition-transform duration-300 group-hover:scale-105"
                               referrerPolicy="no-referrer"
                               onError={(e) => {
-                                (e.target as HTMLImageElement).src =
-                                  'https://images.unsplash.com/photo-1497633762265-9d179a990aa6?q=80&w=800&auto=format&fit=crop';
+                                const target = e.target as HTMLImageElement;
+                                if (target.src !== courseCoverFallback) {
+                                  target.src = courseCoverFallback;
+                                }
                               }}
                             />
-                            <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/30 to-transparent" />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent" />
 
-                            <div className="absolute top-4 right-4 left-4 flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="px-3 py-1 rounded-full text-[11px] font-black bg-indigo-600/95 text-white backdrop-blur-md shadow-sm">
-                                  {course.schoolYear}
-                                </span>
-                                {course.division &&
-                                  !(course.schoolYear?.includes('الابتدائي') || course.schoolYear?.includes('الإعدادي')) && (
-                                  <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-amber-400/95 text-slate-950 backdrop-blur-md shadow-sm">
-                                    {course.division}
-                                  </span>
-                                )}
-                              </div>
+                            <div className="absolute inset-x-4 top-4 flex items-center justify-between gap-2 text-xs font-bold text-white">
+                              <span className="rounded-lg bg-[#1769D2]/90 px-2.5 py-1">
+                                {typeLabel}
+                              </span>
 
                               {enrolled ? (
-                                <span className="px-3 py-1 rounded-full text-[11px] font-black bg-emerald-500 text-white flex items-center gap-1 shadow-sm">
-                                  <Unlock className="w-3 h-3" />
-                                  <span>مفتوح</span>
+                                <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-600/95 px-2.5 py-1">
+                                  <Unlock className="h-3 w-3" />
+                                  <span>مشترك بالكورس</span>
                                 </span>
-                              ) : hasDiscount ? (
-                                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-950/90 text-white border border-white/15 shadow-md">
-                                  <span className="text-[10px] font-bold text-rose-300 line-through decoration-rose-400 decoration-2">
-                                    {course.originalPrice} ج.م
-                                  </span>
-                                  <span className="text-xs font-black text-emerald-400">
-                                    {course.price === 0 ? 'مجاني' : `${course.price} ${course.priceCurrency}`}
-                                  </span>
-                                  <span className="px-1.5 py-0.5 rounded-full bg-rose-600 text-white text-[9px] font-black">
-                                    -{discountPercent}%
-                                  </span>
-                                </div>
+                              ) : course.price === 0 ? (
+                                <span className="rounded-lg bg-emerald-600/95 px-2.5 py-1">
+                                  مجاني بالكامل
+                                </span>
                               ) : (
-                                <span className="px-3 py-1 rounded-full text-[11px] font-black bg-amber-400 text-slate-950 flex items-center gap-1 shadow-sm">
-                                  <Key className="w-3 h-3" />
-                                  <span>{course.price} {course.priceCurrency}</span>
+                                <span className="font-mono-num rounded-lg bg-[#E31B23] px-2.5 py-1">
+                                  {course.price} {course.priceCurrency || 'ج.م'}
                                 </span>
                               )}
                             </div>
 
-                            <div className="absolute bottom-3 right-4 left-4 flex items-center justify-between text-white">
-                              <span className="text-xs font-bold text-amber-300 bg-slate-900/70 px-2.5 py-1 rounded-lg backdrop-blur-xs">
-                                {course.subject}
-                              </span>
-                              <span className="text-xs font-bold bg-white/20 px-2.5 py-1 rounded-lg backdrop-blur-xs">
-                                {totalLessonsCount > 0 ? `${totalLessonsCount} دروس • ${totalVideosCount} فيديو` : `${totalExamsCount} امتحانات`}
-                              </span>
+                            <div className="absolute inset-x-4 bottom-3 flex items-center justify-between gap-2 text-xs font-semibold text-white">
+                              <span className="text-neutral-200">{course.subject}</span>
+                              <span className="font-mono-num text-neutral-100">{course.schoolYear}</span>
                             </div>
                           </div>
 
-                          <div className="p-6 space-y-3">
-                            <h3 className="text-lg font-black text-slate-900 group-hover:text-indigo-700 transition-colors leading-snug">
+                          <div className="space-y-2.5 p-6">
+                            <h3 className="font-display text-lg font-extrabold leading-snug text-[#151515] transition-colors group-hover:text-[#E31B23] dark:text-white">
                               {course.title}
                             </h3>
-                            <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">
+                            <p className="line-clamp-2 text-xs leading-relaxed text-neutral-600 dark:text-neutral-400">
                               {course.description}
                             </p>
+                            <p className="text-xs font-semibold text-[#1769D2]">
+                              المعلمة: {course.instructor || 'أ/ سوزان كريم فهمي'}
+                            </p>
 
-                            {hasDiscount && (
-                              <div className="p-2.5 rounded-2xl bg-gradient-to-l from-rose-50 via-amber-50/60 to-emerald-50 border border-rose-200/80 flex items-center justify-between gap-2">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="text-xs font-bold text-slate-400 line-through decoration-rose-500 decoration-2">
+                            {hasDiscount && !enrolled && (
+                              <div className="flex items-center justify-between gap-2 rounded-xl border border-[#E31B23]/25 bg-[#E31B23]/5 px-3 py-2 text-xs">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-mono-num text-neutral-400 line-through">
                                     {course.originalPrice} {course.priceCurrency || 'ج.م'}
                                   </span>
-                                  <span className="text-base font-black text-emerald-700">
+                                  <span className="font-mono-num font-extrabold text-[#E31B23]">
                                     {course.price === 0 ? 'مجاني' : `${course.price} ${course.priceCurrency || 'ج.م'}`}
                                   </span>
                                 </div>
-                                <span className="px-2.5 py-1 rounded-xl bg-rose-600 text-white text-[11px] font-black shadow-xs">
-                                  خصم {discountPercent}% 🔥
+                                <span className="rounded-md bg-[#E31B23] px-2 py-0.5 text-[10px] font-bold text-white">
+                                  خصم {discountPercent}%
                                 </span>
                               </div>
                             )}
                           </div>
                         </div>
 
-                        <div className="px-6 pb-6 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-                          <div className="text-[11px] text-slate-500 font-bold truncate">
-                            إشراف: <span className="text-slate-800">{course.instructor}</span>
+                        <div className="space-y-2.5 border-t border-neutral-100 px-6 py-4 text-xs font-bold text-[#151515] dark:border-neutral-800 dark:text-neutral-200">
+                          <div className="grid grid-cols-4 gap-1.5 text-center text-[11px] text-neutral-500 dark:text-neutral-400">
+                            <span className="font-mono-num rounded-lg bg-[#F3F4F6] py-1 dark:bg-[#0D0D0F]">
+                              {totalLessonsCount} دروس
+                            </span>
+                            <span className="font-mono-num rounded-lg bg-[#F3F4F6] py-1 dark:bg-[#0D0D0F]">
+                              {totalVideosCount} فيديو
+                            </span>
+                            <span className="font-mono-num rounded-lg bg-[#F3F4F6] py-1 dark:bg-[#0D0D0F]">
+                              {totalFilesCount} ملفات
+                            </span>
+                            <span className="font-mono-num rounded-lg bg-[#F3F4F6] py-1 dark:bg-[#0D0D0F]">
+                              {totalExamsCount} امتحان
+                            </span>
                           </div>
-                          <div className="flex items-center gap-1.5 shrink-0">
+                          <div className="flex items-center justify-between pt-1">
+                            <span className="inline-flex items-center gap-1 text-[11px] text-neutral-500 dark:text-neutral-400">
+                              <ClipboardCheck className="h-3.5 w-3.5 text-[#1769D2]" />
+                              امتحانات وتدريبات تفاعلية
+                            </span>
                             {enrolled ? (
-                              <span className="px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                <Check className="w-3.5 h-3.5" />
-                                <span>مشترك بالكورس</span>
+                              <span className="inline-flex items-center gap-1 text-emerald-600 group-hover:underline">
+                                <Check className="h-3.5 w-3.5" />
+                                <span>فتح الكورس ←</span>
                               </span>
                             ) : (
                               <button
@@ -1444,10 +1410,9 @@ export const LandingHome: React.FC<LandingHomeProps> = ({
                                     onSelectCourse(course);
                                   }
                                 }}
-                                className="px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm shadow-indigo-200 cursor-pointer"
+                                className="cursor-pointer font-extrabold text-[#E31B23] group-hover:underline"
                               >
-                                <Key className="w-3.5 h-3.5 text-amber-300" />
-                                <span>اشتراك في الكورس</span>
+                                {course.price === 0 ? 'فتح الكورس ←' : 'اشتراك في الكورس ←'}
                               </button>
                             )}
                           </div>
@@ -1466,69 +1431,70 @@ export const LandingHome: React.FC<LandingHomeProps> = ({
           <div key="competitions" className={wrapperClass}>
             {renderAdminControls()}
             <ScrollRevealItem disabled={isVisualEditMode}>
-              <section className="bg-gradient-to-br from-indigo-950 via-slate-900 to-slate-950 rounded-[40px] p-8 sm:p-12 text-white shadow-xl border border-indigo-900/40 space-y-8">
-                <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+              <section className="space-y-8 rounded-[32px] border border-[#E31B23]/30 bg-[#0B0B0F] bg-gradient-to-br from-[#1A0D11] via-[#101014] to-[#050507] p-8 text-white shadow-xl sm:p-10">
+                <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
                   <div className="space-y-2">
-                    <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-400/20 text-amber-300 text-xs font-black border border-amber-400/30">
-                      <Trophy className="w-4 h-4 text-amber-400" />
-                      <span>المسابقات العلمية المجانية لجميع الصفوف</span>
+                    <div className="inline-flex items-center gap-2 rounded-lg border border-[#E31B23]/40 bg-[#E31B23]/15 px-3 py-1 text-xs font-bold text-[#ff8b90]">
+                      <Trophy className="h-4 w-4 text-[#E31B23]" />
+                      <span>المسابقات العلمية المجانية</span>
                     </div>
-                    <h2 className="text-2xl sm:text-3xl font-black">
-                      {activeSettings.competitionsSectionTitle || 'تحديات ومسابقات أوائل الطلبة 🏆'}
+                    <h2 className="font-display text-2xl font-black sm:text-3xl">
+                      {activeSettings.competitionsSectionTitle || 'تحديات ومسابقات أوائل الطلبة'}
                     </h2>
-                    <p className="text-xs sm:text-sm text-slate-300 max-w-xl">
-                      {activeSettings.competitionsSectionSubtitle || 'شارك مجاناً في المسابقات الدورية التي ينظمها المشرف وتصدر لوحة الشرف'}
+                    <p className="max-w-xl text-xs text-neutral-300 sm:text-sm">
+                      {activeSettings.competitionsSectionSubtitle || 'شارك مجاناً في المسابقات الدورية وتصدر لوحة الشرف'}
                     </p>
                   </div>
 
                   <button
+                    type="button"
                     onClick={() => !isVisualEditMode && onNavigate('competitions')}
-                    className="px-5 py-3 rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs transition-all flex items-center gap-2 self-start sm:self-auto cursor-pointer"
+                    className="inline-flex h-10 cursor-pointer items-center gap-2 self-start rounded-xl bg-[#E31B23] px-5 text-xs font-bold text-white transition-colors hover:bg-[#B5121B] sm:self-auto"
                   >
                     <span>دخول ساحة المسابقات</span>
-                    <ArrowLeft className="w-4 h-4" />
+                    <ArrowLeft className="h-4 w-4" />
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                   {publishedCompetitions.map((comp, idx) => (
                     <ScrollRevealItem key={comp.id} delayIndex={(idx % 2) + 1} disabled={isVisualEditMode}>
                       <div
                         onClick={() => !isVisualEditMode && onSelectCompetition(comp)}
-                        className="h-full bg-white/5 hover:bg-white/10 border border-white/10 rounded-3xl p-6 transition-all cursor-pointer flex flex-col justify-between space-y-5 group"
+                        className="group flex h-full cursor-pointer flex-col justify-between space-y-5 rounded-2xl border border-white/10 bg-white/5 p-6 transition-all hover:border-[#E31B23]/50 hover:bg-white/10"
                       >
                         <div className="space-y-3">
                           <div className="flex items-center justify-between gap-2">
-                            <span className="px-3 py-1 rounded-full text-[11px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                              مسابقة مجانية متاحة للجميع
+                            <span className="rounded-lg bg-emerald-500/20 px-2.5 py-1 text-[11px] font-bold text-emerald-300">
+                              مسابقة مجانية
                             </span>
-                            <span className="text-xs text-slate-300 flex items-center gap-1 font-bold">
-                              <Clock className="w-3.5 h-3.5 text-amber-400" />
+                            <span className="font-mono-num flex items-center gap-1 text-xs font-bold text-neutral-300">
+                              <Clock className="h-3.5 w-3.5 text-amber-400" />
                               <span>{comp.durationMinutes} دقيقة</span>
                             </span>
                           </div>
 
-                          <h3 className="text-xl font-black text-white group-hover:text-amber-300 transition-colors">
+                          <h3 className="font-display text-xl font-black text-white transition-colors group-hover:text-amber-300">
                             {comp.title}
                           </h3>
-                          <p className="text-xs text-slate-300 leading-relaxed">
+                          <p className="text-xs leading-relaxed text-neutral-300">
                             {comp.description}
                           </p>
 
                           {comp.prizeInfo && (
-                            <div className="p-3 rounded-2xl bg-amber-400/10 border border-amber-400/25 text-amber-300 text-xs font-bold flex items-center gap-2">
-                              <Award className="w-4 h-4 shrink-0 text-amber-400" />
+                            <div className="flex items-center gap-2 rounded-xl border border-amber-400/25 bg-amber-400/10 p-3 text-xs font-bold text-amber-300">
+                              <Award className="h-4 w-4 shrink-0 text-amber-400" />
                               <span>الجائزة: {comp.prizeInfo}</span>
                             </div>
                           )}
                         </div>
 
-                        <div className="pt-4 border-t border-white/10 flex items-center justify-between">
-                          <span className="text-xs text-slate-400 font-bold">
+                        <div className="flex items-center justify-between border-t border-white/10 pt-4">
+                          <span className="text-xs font-bold text-neutral-400">
                             الصف المستهدف: <strong className="text-white">{comp.schoolYear}</strong>
                           </span>
-                          <span className="px-4 py-2 rounded-xl bg-amber-400 text-slate-950 font-black text-xs flex items-center gap-1.5 group-hover:bg-amber-300 transition-all">
-                            <Play className="w-3.5 h-3.5 fill-current" />
+                          <span className="inline-flex items-center gap-1.5 rounded-xl bg-[#E31B23] px-4 py-2 text-xs font-bold text-white transition-colors group-hover:bg-[#B5121B]">
+                            <Play className="h-3.5 w-3.5 fill-current" />
                             <span>ابدأ التحدي الآن</span>
                           </span>
                         </div>
@@ -1546,31 +1512,51 @@ export const LandingHome: React.FC<LandingHomeProps> = ({
           <div key="features" className={wrapperClass}>
             {renderAdminControls()}
             <ScrollRevealItem disabled={isVisualEditMode}>
-              <section className="bg-white border border-slate-200 rounded-[40px] p-8 sm:p-12 shadow-xs">
-                <div className="text-center max-w-2xl mx-auto mb-10 space-y-2">
-                  <h2 className="text-2xl sm:text-3xl font-black text-slate-900">
-                    {activeSettings.featuresSectionTitle || `لماذا تختار ${activeSettings.platformName}؟`}
+              <section
+                id="features"
+                className="rounded-[32px] border border-neutral-200 bg-white p-6 transition-colors dark:border-neutral-800 dark:bg-[#16161A] sm:p-10"
+              >
+                <div className="mx-auto max-w-2xl text-center">
+                  <h2 className="font-display text-2xl font-black text-[#151515] dark:text-white sm:text-3xl">
+                    {activeSettings.featuresSectionTitle || 'لماذا تختار منصة المتفلسفة؟'}
                   </h2>
-                  <p className="text-xs sm:text-sm text-slate-500">
-                    {activeSettings.featuresSectionSubtitle || 'منظومة تعليمية متكاملة مصممة لضمان التزام الطالب وتحقيق أعلى الدرجات'}
+                  <p className="mt-2 text-xs text-neutral-600 dark:text-neutral-400 sm:text-sm">
+                    {activeSettings.featuresSectionSubtitle ||
+                      'بيئة تعليمية متكاملة تجمع بين الشرح المبسط والامتحانات التسلسلية ومتابعة ولي الأمر.'}
                   </p>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {featuresList.map((feat, idx) => (
-                    <ScrollRevealItem
-                      key={idx}
-                      delayIndex={idx + 1}
-                      disabled={isVisualEditMode}
-                      className="p-6 rounded-3xl bg-slate-50 border border-slate-200/70 space-y-3"
-                    >
-                      <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md">
-                        {idx === 0 ? <Lock className="w-6 h-6" /> : idx === 1 ? <Key className="w-6 h-6" /> : <UserCheck className="w-6 h-6" />}
+                <div className="mt-8 grid grid-cols-1 items-stretch gap-8 lg:grid-cols-12">
+                  <div className="lg:col-span-5">
+                    <div className="h-full overflow-hidden rounded-2xl border border-neutral-200 bg-[#F3F4F6] dark:border-neutral-800 dark:bg-[#0D0D0F]">
+                      <img
+                        src={learningDeskImg}
+                        alt="بيئة مذاكرة منظمة في منصة المتفلسفة"
+                        className="h-full min-h-[240px] w-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:col-span-7">
+                    {WHY_CHOOSE_FEATURES.map((feat, idx) => (
+                      <div
+                        key={feat.number}
+                        className={`rounded-2xl border border-neutral-200/80 bg-[#F3F4F6] p-5 dark:border-neutral-800 dark:bg-[#1D1D23] ${
+                          idx === WHY_CHOOSE_FEATURES.length - 1 ? 'sm:col-span-2' : ''
+                        }`}
+                      >
+                        <span className="font-mono-num text-xs font-extrabold text-[#E31B23]">
+                          {feat.number}.
+                        </span>
+                        <h3 className="font-display mt-1 text-base font-bold text-[#151515] dark:text-white">
+                          {feat.title}
+                        </h3>
+                        <p className="mt-1 text-xs leading-relaxed text-neutral-600 dark:text-neutral-400">
+                          {feat.description}
+                        </p>
                       </div>
-                      <h3 className="text-base font-black text-slate-900">{feat.title}</h3>
-                      <p className="text-xs text-slate-600 leading-relaxed">{feat.desc}</p>
-                    </ScrollRevealItem>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               </section>
             </ScrollRevealItem>
@@ -1630,6 +1616,15 @@ export const LandingHome: React.FC<LandingHomeProps> = ({
             >
               <Plus className="w-3.5 h-3.5" />
               <span>+ إضافة قسم (نص / صورة / فيديو) 🎬</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowColorPickerModal(true)}
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-400 via-orange-500 to-amber-500 hover:from-amber-500 hover:to-orange-600 text-slate-950 font-black text-xs flex items-center gap-1.5 cursor-pointer shadow-lg shadow-amber-500/30 transition-all border border-amber-300 animate-pulse"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-slate-950" />
+              <span>🎨 تخصيص ألوان المنصة</span>
             </button>
 
             <button
@@ -2030,6 +2025,139 @@ export const LandingHome: React.FC<LandingHomeProps> = ({
           </div>
         </div>
       )}
+
+            {/* Platform Theme Color Customizer Modal (Admin Visual Editor Only) */}
+      {isVisualEditMode && showColorPickerModal && (
+        <div className="fixed inset-0 z-[99999] bg-black/75 backdrop-blur-md flex items-center justify-center p-4" dir="rtl">
+          <div className="bg-slate-900 border-2 border-amber-500/50 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl text-white space-y-6">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-400">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-base">تخصيص ألوان أجزاء المنصة</h3>
+                  <p className="text-xs text-slate-400">تحكم كامل في الألوان والأزرار وخلفيات المنصة</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowColorPickerModal(false)}
+                className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Primary Accent Color */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-black text-amber-300">لون الأزرار والعناصر الرئيسية (Gold/Accent)</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="color"
+                    value={customPrimaryColor}
+                    onChange={(e) => setCustomPrimaryColor(e.target.value)}
+                    className="w-12 h-10 rounded-xl cursor-pointer bg-slate-800 border border-slate-700"
+                  />
+                  <input
+                    type="text"
+                    value={customPrimaryColor}
+                    onChange={(e) => setCustomPrimaryColor(e.target.value)}
+                    className="flex-1 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 font-mono text-xs text-white"
+                  />
+                </div>
+              </div>
+
+              {/* Background Color */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-black text-slate-300">لون الخلفية العامة للمنصة (Background)</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="color"
+                    value={customBgColor}
+                    onChange={(e) => setCustomBgColor(e.target.value)}
+                    className="w-12 h-10 rounded-xl cursor-pointer bg-slate-800 border border-slate-700"
+                  />
+                  <input
+                    type="text"
+                    value={customBgColor}
+                    onChange={(e) => setCustomBgColor(e.target.value)}
+                    className="flex-1 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 font-mono text-xs text-white"
+                  />
+                </div>
+              </div>
+
+              {/* Quick Presets */}
+              <div className="space-y-2 pt-2">
+                <label className="text-xs font-black text-slate-400">نماذج ألوان جاهزة بضغطة زر:</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {THEME_PRESETS.map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => applyColors(preset.primaryColor, preset.bgColor, preset.textColor)}
+                      className="p-2 rounded-xl border text-xs font-bold hover:scale-102 transition-transform cursor-pointer text-right"
+                      style={{
+                        backgroundColor: preset.bgColor,
+                        color: preset.textColor,
+                        borderColor: preset.primaryColor,
+                      }}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  applyColors(customPrimaryColor, customBgColor, customTextColor);
+                  setShowColorPickerModal(false);
+                }}
+                className="flex-1 py-3 px-4 rounded-2xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-500 hover:to-amber-600 text-slate-950 font-black text-sm shadow-lg shadow-amber-500/25 cursor-pointer"
+              >
+                تطبيق وحفظ الألوان الآن ✅
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isVisualEditMode) return;
+                  resetPlatformThemeColors(true);
+                  const next: PlatformSettings = {
+                    ...draftSettings,
+                    customTheme: {
+                      enabled: false,
+                      primaryColor: '',
+                      bgColor: '',
+                      textColor: '',
+                      updatedAt: Date.now(),
+                    },
+                  };
+                  setDraftSettings(next);
+                  if (onSaveVisualSettings) onSaveVisualSettings(next);
+                  setSaveToast('✅ تم إرجاع الألوان الافتراضية للمنصة للجميع.');
+                  setShowColorPickerModal(false);
+                }}
+                className="px-3.5 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs cursor-pointer"
+              >
+                الافتراضي
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowColorPickerModal(false)}
+                className="px-4 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs cursor-pointer"
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      
     </div>
   );
 };

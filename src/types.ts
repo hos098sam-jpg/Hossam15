@@ -1,20 +1,7 @@
 export type BacBranch = 'scientific' | 'literary';
 
-export type SchoolYearGrade = 
-  | 'الصف الأول الابتدائي'
-  | 'الصف الثاني الابتدائي'
-  | 'الصف الثالث الابتدائي'
-  | 'الصف الرابع الابتدائي'
-  | 'الصف الخامس الابتدائي'
-  | 'الصف السادس الابتدائي'
-  | 'الصف الأول الإعدادي'
-  | 'الصف الثاني الإعدادي'
-  | 'الصف الثالث الإعدادي'
+export type SchoolYearGrade =
   | 'الصف الأول الثانوي'
-  | 'الصف الثاني الثانوي'
-  | 'الصف الثالث الثانوي'
-  | 'بكالوريا 2027 (علمي)'
-  | 'بكالوريا 2027 (أدبي)'
   | string;
 
 export interface TeacherPermissions {
@@ -32,6 +19,10 @@ export const TEACHER_PERMISSIONS: TeacherPermissions = {
 export type AssistantSpecialty = 'student_support' | 'essay_grading' | 'content_management';
 
 export interface User {
+  grade?: string;
+  completedLessonsIds?: string[];
+  watchedVideos?: any[];
+  completedExams?: any[];
   id: string;
   uid?: string;
   name: string;
@@ -54,10 +45,6 @@ export interface User {
   email?: string;
   emailVerified?: boolean;
   password?: string;
-  grade?: string;
-  completedLessonsIds?: string[];
-  watchedVideos?: any;
-  completedExams?: any;
   schoolYear: string;
   role: 'student' | 'admin' | 'parent' | 'teacher' | 'assistant';
   authProvider?: 'whatsapp' | 'email' | 'parent' | 'phone';
@@ -77,6 +64,8 @@ export interface User {
   registeredAt: string;
   enrolledCourseIds?: string[];
   activeSessionId?: string; // لمعرفة الجلسة النشطة ومنع فتح الحساب على أكثر من جهاز في وقت واحد
+  current_session_token?: string; // UUID الجلسة النشطة المخزن في قاعدة البيانات لطرد أي جهاز قديم
+  device_fingerprint?: string; // بصمة المتصفح والجهاز المقترنة بـ session_token
   currentDeviceId?: string; // معرف الجهاز المقترن حالياً لمنع مشاركة الحسابات
   currentDeviceName?: string; // وصف الجهاز (نظام التشغيل والمتصفح)
   deviceChangesHistory?: Array<{
@@ -116,18 +105,19 @@ export interface User {
   referralsCount?: number; // عدد الأصدقاء الذين دعاهم الطالب
   referralEarnings?: number; // إجمالي أرباح الطالب من دعوة الأصدقاء
   videoNotes?: Record<string, VideoTimestampNote[]>; // ملاحظات الطالب الزمنية تحت الفيديوهات
+  platform?: string;
 }
 
 export interface VideoTimestampNote {
+  courseId?: string;
+  lessonId?: string;
+  lessonTitle?: string;
   id: string;
   videoId: string;
   timestampSeconds: number;
   timestampFormatted: string;
   noteText: string;
-  courseId?: string;
-  lessonId?: string;
   createdAt: string;
-  lessonTitle?: string;
 }
 
 export interface WalletTransaction {
@@ -268,6 +258,8 @@ export interface CourseAccessCode {
 export type CourseType = 'integrated' | 'exams_only' | 'revision';
 
 export interface LessonVideo {
+  vcdnHlsUrl?: string;
+  vcdnEmbedUrl?: string;
   id: string;
   title: string;
   url: string; // YouTube, MP4, Vimeo, Google Drive, or embed link
@@ -281,8 +273,6 @@ export interface LessonVideo {
   vcdnVideoId?: string;
   vcdnStatus?: 'uploading' | 'processing' | 'ready' | 'failed';
   vcdnThumbnailUrl?: string;
-  vcdnHlsUrl?: string;
-  vcdnEmbedUrl?: string;
   fileSize?: number;
 }
 
@@ -307,6 +297,7 @@ export interface CourseLesson {
 }
 
 export interface Course {
+  accessCode?: string;
   id: string;
   title: string; // اسم الكورس
   courseType?: CourseType; // نوع الكورس: شرح متكامل / امتحانات فقط / مراجعة
@@ -423,6 +414,14 @@ export interface PlatformSettings {
   customHomeBlocks?: CustomHomeBlock[];
   customStats?: { label: string; value: string }[];
   customFeatures?: { title: string; desc: string }[];
+  customTheme?: {
+    enabled?: boolean;
+    primaryColor: string;
+    bgColor: string;
+    textColor: string;
+    defaultMode?: 'light' | 'dark';
+    updatedAt?: number;
+  };
 }
 
 export interface LessonExam {
@@ -457,6 +456,8 @@ export interface EssayReviewItem {
 }
 
 export interface StudentExamSubmission {
+  score?: number;
+  totalPoints?: number;
   submissionId?: string;
   examId: string;
   courseId?: string;
@@ -478,8 +479,6 @@ export interface StudentExamSubmission {
   totalScore: number;
   maxScore: number;
   percentage: number;
-  score?: number;
-  totalPoints?: number;
   passed?: boolean;
   essayGrades?: Record<string, EssayGradingResult>;
   essayReviews?: Record<string, EssayReviewItem>;
@@ -614,6 +613,9 @@ export interface WalletOrder {
 }
 
 export interface CourseBundle {
+  badgeText?: string;
+  grade?: string;
+  features?: string[];
   id: string;
   title: string;
   description: string;
@@ -623,29 +625,28 @@ export interface CourseBundle {
   instructor: string;
   instructorId?: string;
   coverImage?: string;
-  badgeText?: string;
-  grade?: string;
   courseIds: string[]; // قائمة الكورسات المشمولة داخل الباقة
   originalTotalPrice: number; // مجموع أسعار الكورسات الأصلية
   bundlePrice: number; // سعر الباقة المخفض
   discountPercentage: number; // نسبة التوفير %
   isPublished: boolean;
-  features?: string[];
   createdAt: string;
 }
 
 export interface LessonQAReply {
+  text?: string;
   id: string;
   authorId: string;
   authorName: string;
   authorRole: 'student' | 'admin' | 'teacher' | 'assistant';
   content: string;
   imageUrl?: string;
-  text?: string;
   createdAt: string;
 }
 
 export interface LessonQAItem {
+  videoTimestamp?: number;
+  imageUrl?: string;
   id: string;
   courseId: string;
   courseTitle?: string;
@@ -659,8 +660,6 @@ export interface LessonQAItem {
   questionText: string;
   questionImageUrl?: string;
   createdAt: string;
-  videoTimestamp?: number;
-  imageUrl?: string;
   isResolved?: boolean;
   replies: LessonQAReply[];
 }

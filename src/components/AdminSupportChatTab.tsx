@@ -17,6 +17,7 @@ import { SupportChatTicket, SupportChatMessage } from '../types';
 import { compressImageFile } from '../utils/imageUtils';
 import { db, auth } from '../auth';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { getClientAuthHeaders } from '../utils/authToken';
 
 export const AdminSupportChatTab: React.FC<{ adminName?: string }> = ({ adminName }) => {
   const [tickets, setTickets] = useState<SupportChatTicket[]>([]);
@@ -31,7 +32,8 @@ export const AdminSupportChatTab: React.FC<{ adminName?: string }> = ({ adminNam
 
   const fetchTickets = async () => {
     try {
-      const res = await fetch('/api/support-chat/tickets');
+      const headers = await getClientAuthHeaders();
+      const res = await fetch('/api/support-chat/tickets', { headers });
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data?.tickets)) {
@@ -52,7 +54,7 @@ export const AdminSupportChatTab: React.FC<{ adminName?: string }> = ({ adminNam
     let unsub: (() => void) | null = null;
     if (auth.currentUser) {
       try {
-        const docRef = doc(db, 'qalbalelm_data', 'support_chats');
+        const docRef = doc(db, 'al_motafalsifa_data', 'support_chats');
         unsub = onSnapshot(
           docRef,
           (snap) => {
@@ -78,18 +80,22 @@ export const AdminSupportChatTab: React.FC<{ adminName?: string }> = ({ adminNam
 
   useEffect(() => {
     if (selectedTicket && selectedTicket.unreadByAdmin > 0) {
-      fetch('/api/support-chat/mark-read', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticketId: selectedTicket.id, readerRole: 'admin' }),
-      }).catch(() => {});
+      getClientAuthHeaders({ 'Content-Type': 'application/json' })
+        .then((headers) =>
+          fetch('/api/support-chat/mark-read', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ ticketId: selectedTicket.id, readerRole: 'admin' }),
+          })
+        )
+        .catch(() => {});
     }
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [selectedTicketId, selectedTicket?.messages?.length]);
 
   const syncListToCloud = async (updatedList: SupportChatTicket[]) => {
     try {
-      const docRef = doc(db, 'qalbalelm_data', 'support_chats');
+      const docRef = doc(db, 'al_motafalsifa_data', 'support_chats');
       await setDoc(docRef, { data: updatedList, updatedAt: new Date().toISOString() }, { merge: true });
     } catch {}
   };
@@ -105,9 +111,10 @@ export const AdminSupportChatTab: React.FC<{ adminName?: string }> = ({ adminNam
     setIsSending(true);
 
     try {
+      const msgHeaders = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
       const res = await fetch('/api/support-chat/message', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: msgHeaders,
         body: JSON.stringify({
           ticketId: selectedTicket.id,
           studentName: selectedTicket.studentName,
@@ -157,7 +164,8 @@ export const AdminSupportChatTab: React.FC<{ adminName?: string }> = ({ adminNam
   const handleDeleteTicket = async (ticketId: string) => {
     if (!window.confirm('هل تريد حذف هذه المحادثة نهائياً؟')) return;
     try {
-      await fetch(`/api/support-chat/ticket/${encodeURIComponent(ticketId)}`, { method: 'DELETE' });
+      const delHeaders = await getClientAuthHeaders();
+      await fetch(`/api/support-chat/ticket/${encodeURIComponent(ticketId)}`, { method: 'DELETE', headers: delHeaders });
       const nextList = tickets.filter((t) => t.id !== ticketId);
       setTickets(nextList);
       syncListToCloud(nextList);

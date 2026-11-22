@@ -1,6 +1,6 @@
 import { Course, CourseLesson, LessonVideo, CourseExam, User } from '../types';
 
-const COMPLETED_VIDEOS_STORAGE_KEY_PREFIX = 'qalb_alam_completed_videos_';
+const COMPLETED_VIDEOS_STORAGE_KEY_PREFIX = 'al_motafalsifa_completed_videos_';
 
 /**
  * Gets the record of completed videos from localStorage + user state
@@ -59,7 +59,7 @@ export function markVideoCompleted(
       
       // Dispatch event so any listening UI updates instantaneously
       window.dispatchEvent(
-        new CustomEvent('qalb_alam_video_completed', {
+        new CustomEvent('al_motafalsifa_video_completed', {
           detail: { videoId, userId: currentUser?.id },
         })
       );

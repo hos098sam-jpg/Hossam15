@@ -14,6 +14,7 @@ import {
   PlayCircle,
 } from 'lucide-react';
 import { LessonQAItem, User, VideoTimestampNote } from '../types';
+import { getClientAuthHeaders } from '../utils/authToken';
 
 interface LessonQASectionProps {
   courseId: string;
@@ -62,20 +63,19 @@ export const LessonQASection: React.FC<LessonQASectionProps> = ({
   }, [courseId, lessonId]);
 
   useEffect(() => {
-    const storageKey = `qalb_video_notes_${currentUser?.id || 'guest'}`;
+    const storageKey = `motafalsifa_video_notes_${currentUser?.id || 'guest'}`;
     try {
       const saved = localStorage.getItem(storageKey);
       if (saved) {
-        const parsed = JSON.parse(saved);
-        setLocalNotes(Array.isArray(parsed) ? parsed : Object.values(parsed).flat());
+        setLocalNotes(JSON.parse(saved));
       } else if (currentUser?.videoNotes) {
-        const notesObj = currentUser.videoNotes as any;
-        setLocalNotes(Array.isArray(notesObj) ? notesObj : Object.values(notesObj).flat());
+        const notesMap = currentUser.videoNotes as Record<string, VideoTimestampNote[]>;
+        setLocalNotes(Array.isArray(notesMap) ? notesMap : (notesMap[lessonId] || notesMap["all"] || []));
       }
     } catch {
       if (currentUser?.videoNotes) {
-        const notesObj = currentUser.videoNotes as any;
-        setLocalNotes(Array.isArray(notesObj) ? notesObj : Object.values(notesObj).flat());
+        const notesMap = currentUser.videoNotes as Record<string, VideoTimestampNote[]>;
+        setLocalNotes(Array.isArray(notesMap) ? notesMap : (notesMap[lessonId] || notesMap["all"] || []));
       }
     }
   }, [currentUser?.id]);
@@ -86,7 +86,8 @@ export const LessonQASection: React.FC<LessonQASectionProps> = ({
       const res = await fetch(
         `/api/lesson-qa?courseId=${encodeURIComponent(courseId)}&lessonId=${encodeURIComponent(lessonId)}`
       );
-      if (res.ok) {
+      const ct = res.headers.get("content-type") || "";
+      if (res.ok && ct.includes("application/json")) {
         const data = await res.json();
         if (Array.isArray(data.items)) {
           setQaItems(data.items);
@@ -116,9 +117,10 @@ export const LessonQASection: React.FC<LessonQASectionProps> = ({
     if (!questionText.trim()) return;
     setSubmittingQuestion(true);
     try {
+      const askHeaders = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
       const res = await fetch('/api/lesson-qa/ask', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: askHeaders,
         body: JSON.stringify({
           courseId,
           lessonId,
@@ -151,12 +153,13 @@ export const LessonQASection: React.FC<LessonQASectionProps> = ({
     if (!replyText.trim()) return;
     setSubmittingReply(true);
     try {
+      const replyHeaders = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
       const res = await fetch(`/api/lesson-qa/${qaId}/reply`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: replyHeaders,
         body: JSON.stringify({
           authorId: currentUser?.id || 'staff',
-          authorName: currentUser?.name || 'د. حسام شحاته',
+          authorName: currentUser?.name || 'أ/ سوزان كريم فهمي',
           authorRole: currentUser?.role || 'teacher',
           text: replyText.trim(),
         }),
@@ -178,7 +181,8 @@ export const LessonQASection: React.FC<LessonQASectionProps> = ({
 
   const handleDeleteQuestion = async (qaId: string) => {
     try {
-      const res = await fetch(`/api/lesson-qa/${qaId}`, { method: 'DELETE' });
+      const delHeaders = await getClientAuthHeaders();
+      const res = await fetch(`/api/lesson-qa/${qaId}`, { method: 'DELETE', headers: delHeaders });
       if (res.ok) {
         setQaItems((prev) => prev.filter((i) => i.id !== qaId));
       }
@@ -191,10 +195,12 @@ export const LessonQASection: React.FC<LessonQASectionProps> = ({
     e.preventDefault();
     if (!noteText.trim()) return;
 
+    const parts = (noteTimestamp.trim() || '00:00').split(':').map((n) => parseInt(n, 10) || 0);
+    const tsSeconds = parts.length === 2 ? parts[0] * 60 + parts[1] : (parts.length === 3 ? parts[0] * 3600 + parts[1] * 60 + parts[2] : (parts[0] || 0));
     const newNote: VideoTimestampNote = {
-      videoId: lessonId,
-      timestampSeconds: 0,
       id: `vnote_${Date.now()}`,
+      videoId: lessonId,
+      timestampSeconds: tsSeconds,
       courseId,
       lessonId,
       lessonTitle,
@@ -212,7 +218,7 @@ export const LessonQASection: React.FC<LessonQASectionProps> = ({
     setLocalNotes(updated);
     setNoteText('');
 
-    const storageKey = `qalb_video_notes_${currentUser?.id || 'guest'}`;
+    const storageKey = `motafalsifa_video_notes_${currentUser?.id || 'guest'}`;
     try {
       localStorage.setItem(storageKey, JSON.stringify(updated));
     } catch {}
@@ -224,7 +230,7 @@ export const LessonQASection: React.FC<LessonQASectionProps> = ({
   const handleDeleteNote = (noteId: string) => {
     const updated = localNotes.filter((n) => n.id !== noteId);
     setLocalNotes(updated);
-    const storageKey = `qalb_video_notes_${currentUser?.id || 'guest'}`;
+    const storageKey = `motafalsifa_video_notes_${currentUser?.id || 'guest'}`;
     try {
       localStorage.setItem(storageKey, JSON.stringify(updated));
     } catch {}

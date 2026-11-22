@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
 import { getSafeFirestore } from "./apiApp";
 import { validateCoupon, unlockCourseForStudent } from "./fawaterakService";
 import type { WalletOrder } from "../types";
@@ -8,11 +9,32 @@ import type { WalletOrder } from "../types";
 // 1. CONFIGURATION & WALLET RECIPIENT
 // ============================================================================
 
+const DATA_DIR = path.join(process.cwd(), "data");
+const SMS_SECRET_FILE = path.join(DATA_DIR, ".sms_gateway_secret");
+
+function getOrCreateSmsGatewaySecret(): string {
+  if (process.env.SMS_GATEWAY_SECRET && process.env.SMS_GATEWAY_SECRET.trim()) {
+    return process.env.SMS_GATEWAY_SECRET.trim();
+  }
+  try {
+    if (fs.existsSync(SMS_SECRET_FILE)) {
+      const saved = fs.readFileSync(SMS_SECRET_FILE, "utf8").trim();
+      if (saved.length >= 24) return saved;
+    }
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    const fresh = crypto.randomBytes(24).toString("hex");
+    fs.writeFileSync(SMS_SECRET_FILE, fresh, { encoding: "utf8", mode: 0o600 });
+    return fresh;
+  } catch {
+    return crypto.randomBytes(24).toString("hex");
+  }
+}
+
 export const WALLET_CONFIG = {
   // Official Vodafone Cash Receiving Number
   receivingWalletNumber: process.env.VODAFONE_CASH_NUMBER || "01040672314",
-  receivingWalletName: "فودافون كاش - منصة قلب العلم التعليمية",
-  webhookSecret: process.env.SMS_GATEWAY_SECRET || "alelm_sms_secure_2027",
+  receivingWalletName: "فودافون كاش - منصة المتفلسفة التعليمية",
+  webhookSecret: getOrCreateSmsGatewaySecret(),
   autoApproveOnSmsMatch: true,
 };
 
@@ -23,8 +45,12 @@ export function updateWalletConfig(newConfig: Partial<typeof WALLET_CONFIG>) {
   if (newConfig.receivingWalletName) {
     WALLET_CONFIG.receivingWalletName = newConfig.receivingWalletName;
   }
-  if (newConfig.webhookSecret) {
-    WALLET_CONFIG.webhookSecret = newConfig.webhookSecret;
+  if (newConfig.webhookSecret && newConfig.webhookSecret.trim().length >= 8) {
+    WALLET_CONFIG.webhookSecret = newConfig.webhookSecret.trim();
+    try {
+      if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+      fs.writeFileSync(SMS_SECRET_FILE, WALLET_CONFIG.webhookSecret, { encoding: "utf8", mode: 0o600 });
+    } catch {}
   }
   if (typeof newConfig.autoApproveOnSmsMatch === "boolean") {
     WALLET_CONFIG.autoApproveOnSmsMatch = newConfig.autoApproveOnSmsMatch;
@@ -446,6 +472,7 @@ export interface HandleSmsWebhookParams {
   originatingAddress?: string;
   secret?: string;
   token?: string;
+  webhookSecret?: string;
 }
 
 export async function processIncomingSmsWebhook(payload: HandleSmsWebhookParams) {
@@ -469,9 +496,20 @@ export async function processIncomingSmsWebhook(payload: HandleSmsWebhookParams)
 
   console.log(`[SMS Gateway] Received webhook from sender: "${sender}"`);
 
-  // 1. Verify Sender Authenticity
+  // 1. Verify Webhook Secret + Sender Authenticity using timingSafeEqual
+  const providedSecret = String(
+    payload?.secret || payload?.token || payload?.webhookSecret || ""
+  ).trim();
+  const expectedSecret = String(WALLET_CONFIG.webhookSecret || "").trim();
+  const secretBufA = Buffer.from(providedSecret, "utf8");
+  const secretBufB = Buffer.from(expectedSecret, "utf8");
+  const hasValidSecret =
+    secretBufB.length > 0 &&
+    secretBufA.length === secretBufB.length &&
+    crypto.timingSafeEqual(secretBufA, secretBufB);
+
   const senderLower = sender.toLowerCase();
-  const isAuthorizedSender =
+  const isKnownTelecomSender =
     senderLower.includes("vf-cash") ||
     senderLower.includes("vodafone") ||
     senderLower.includes("cash") ||
@@ -480,15 +518,14 @@ export async function processIncomingSmsWebhook(payload: HandleSmsWebhookParams)
     senderLower.includes("orange") ||
     senderLower.includes("we-pay") ||
     senderLower.includes("instapay") ||
-    payload.secret === WALLET_CONFIG.webhookSecret ||
-    payload.token === WALLET_CONFIG.webhookSecret;
+    senderLower.includes("gateway");
 
-  if (!isAuthorizedSender) {
-    console.warn(`[SMS Gateway] Rejected unauthorized sender: "${sender}"`);
+  if (!hasValidSecret || (!isKnownTelecomSender && !sender)) {
+    console.warn(`[SMS Gateway] Rejected unauthorized webhook (sender: "${sender}")`);
     return {
       status: 403,
       success: false,
-      error: "Unauthorized sender. Sender must be Vodafone Cash (VF-Cash/Vodafone)",
+      error: "Unauthorized SMS webhook request or invalid gateway secret",
     };
   }
 

@@ -2,26 +2,21 @@ import React, { useState } from 'react';
 import {
   BookOpen,
   Search,
-  Filter,
-  Lock,
   ArrowLeft,
-  GraduationCap,
   Sparkles,
-  Layers,
   CheckCircle2,
-  ShieldCheck,
-  Video,
-  FileText,
-  HelpCircle
+  ClipboardCheck,
+  Unlock,
+  Check,
 } from 'lucide-react';
-import { Course, SchoolYearGrade, User } from '../types';
+import courseCoverFallback from '../assets/images/course_cover_fallback_1795340027848.jpg';
+import { Course, User } from '../types';
 import {
   saveCurrentUser,
   saveUsers,
   getSavedUsers,
-  saveStudentEnrolledCourse
+  saveStudentEnrolledCourse,
 } from '../data/initialData';
-import { enrollStudentInCourseInFirestore } from '../auth';
 import { CourseBundlesSection } from './CourseBundlesSection';
 
 interface CoursesViewProps {
@@ -39,7 +34,6 @@ export const CoursesView: React.FC<CoursesViewProps> = ({
   currentUser,
   teachers = [],
   onSelectCourse,
-  onSelectTeacher,
   onUpdateUser,
   onOpenAuth,
 }) => {
@@ -50,39 +44,19 @@ export const CoursesView: React.FC<CoursesViewProps> = ({
   const [selectedType, setSelectedType] = useState<'all' | 'integrated' | 'exams_only'>('all');
 
   const isStudent = currentUser && currentUser.role === 'student';
-  const isApprovedStudent = isStudent && (currentUser.status === 'active' || currentUser.status === 'approved' || !currentUser.status);
+  const isApprovedStudent =
+    isStudent && (currentUser.status === 'active' || currentUser.status === 'approved' || !currentUser.status);
 
-  // Grade matching helper
   const matchesStudentGrade = (courseYear: string, studentYear: string) => {
     if (!studentYear) return true;
     if (courseYear === studentYear) return true;
-    if (studentYear.includes(courseYear) || courseYear.includes(studentYear)) return true;
-
-    if (studentYear.includes('الأول الابتدائي') && courseYear.includes('الأول الابتدائي')) return true;
-    if (studentYear.includes('الثاني الابتدائي') && courseYear.includes('الثاني الابتدائي')) return true;
-    if (studentYear.includes('الثالث الابتدائي') && courseYear.includes('الثالث الابتدائي')) return true;
-    if (studentYear.includes('الرابع الابتدائي') && courseYear.includes('الرابع الابتدائي')) return true;
-    if (studentYear.includes('الخامس الابتدائي') && courseYear.includes('الخامس الابتدائي')) return true;
-    if (studentYear.includes('السادس الابتدائي') && courseYear.includes('السادس الابتدائي')) return true;
-    
-    if (studentYear.includes('الأول الإعدادي') && courseYear.includes('الأول الإعدادي')) return true;
-    if (studentYear.includes('الثاني الإعدادي') && courseYear.includes('الثاني الإعدادي')) return true;
-    if (studentYear.includes('الثالث الإعدادي') && courseYear.includes('الثالث الإعدادي')) return true;
-    
     if (studentYear.includes('الأول الثانوي') && courseYear.includes('الأول الثانوي')) return true;
-    if (studentYear.includes('الثاني الثانوي') && courseYear.includes('الثاني الثانوي')) return true;
-    if (studentYear.includes('الثالث الثانوي') && (courseYear.includes('الثالث الثانوي') || courseYear.includes('بكالوريا'))) return true;
-
-    return false;
+    return true;
   };
 
-  // Published courses: show all published courses (isPublished !== false)
   const publishedCourses = courses.filter((c) => c.isPublished !== false);
-
-  // Extract unique subjects
   const subjects = Array.from(new Set(publishedCourses.map((c) => c.subject).filter(Boolean)));
 
-  // Filter courses by search, dropdowns, and course type
   const filteredCourses = publishedCourses.filter((course) => {
     const matchesSearch =
       !searchQuery.trim() ||
@@ -92,13 +66,16 @@ export const CoursesView: React.FC<CoursesViewProps> = ({
 
     const matchesYear =
       selectedYear === 'all' ||
-      (selectedYear === 'my_grade' && currentUser?.schoolYear && matchesStudentGrade(course.schoolYear, currentUser.schoolYear)) ||
+      (selectedYear === 'my_grade' &&
+        currentUser?.schoolYear &&
+        matchesStudentGrade(course.schoolYear, currentUser.schoolYear)) ||
       course.schoolYear === selectedYear ||
       matchesStudentGrade(course.schoolYear, selectedYear);
 
     const matchesSubject = selectedSubject === 'all' || course.subject === selectedSubject;
 
-    const isCourseIntegrated = course.courseType === 'integrated' || (course.lessons && course.lessons.length > 0);
+    const isCourseIntegrated =
+      course.courseType === 'integrated' || (course.lessons && course.lessons.length > 0);
     const matchesType =
       selectedType === 'all' ||
       (selectedType === 'integrated' && isCourseIntegrated) ||
@@ -114,132 +91,162 @@ export const CoursesView: React.FC<CoursesViewProps> = ({
   });
 
   return (
-    <div className="space-y-8 animate-fadeIn pb-16">
+    <div className="space-y-8 pb-16 animate-fadeIn">
       {/* Student Grade Specific Banner */}
       {isApprovedStudent && (
-        <div className="bg-gradient-to-r from-emerald-600 via-teal-700 to-indigo-900 border border-emerald-400/40 rounded-[32px] p-6 sm:p-8 text-white shadow-lg space-y-3">
+        <div className="space-y-3 rounded-[32px] border border-emerald-500/30 bg-[#0B0B0F] bg-gradient-to-l from-[#12201B] via-[#101014] to-[#0D111A] p-6 text-white shadow-lg sm:p-8">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-black bg-emerald-400 text-slate-950 px-3 py-1 rounded-full">
-                حساب معتمد ومفعل ✅
+            <div className="flex flex-wrap items-center gap-2.5">
+              <span className="rounded-lg bg-emerald-500 px-3 py-1 text-xs font-extrabold text-neutral-950">
+                حساب معتمد ومفعل
               </span>
-              <span className="text-xs font-mono text-emerald-100">
+              <span className="font-mono-num text-xs text-emerald-200">
                 الصف الدراسي: {currentUser.schoolYear}
               </span>
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setSelectedYear(selectedYear === 'my_grade' ? 'all' : 'my_grade')}
-                className="px-3.5 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white font-bold text-xs transition-all cursor-pointer"
-              >
-                {selectedYear === 'my_grade' ? '🔍 عرض جميع الصفوف والمناهج' : '🎯 تخصيص لصفّي الدراسي فقط'}
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setSelectedYear(selectedYear === 'my_grade' ? 'all' : 'my_grade')}
+              className="cursor-pointer rounded-xl border border-white/15 bg-white/10 px-4 py-2 text-xs font-bold text-white transition-colors hover:bg-white/20"
+            >
+              {selectedYear === 'my_grade'
+                ? 'عرض جميع الصفوف والمناهج'
+                : 'تخصيص لصفّي الدراسي فقط'}
+            </button>
           </div>
-          <h2 className="text-xl sm:text-2xl font-black">
-            مرحباً بك يا {currentUser.name} 🌟
+          <h2 className="font-display text-xl font-black sm:text-2xl">
+            مرحباً بك يا {currentUser.name}
           </h2>
-          <p className="text-xs sm:text-sm text-emerald-100/90 leading-relaxed max-w-2xl">
+          <p className="max-w-2xl text-xs leading-relaxed text-neutral-300 sm:text-sm">
             {selectedYear === 'my_grade'
               ? `يتم الآن عرض الكورسات والامتحانات المقررة لصفك الدراسي (${currentUser.schoolYear}).`
-              : 'تصفح كافة الكورسات والامتحانات المتاحة على المنصة لجميع الصفوف الدراسية.'}
+              : 'تصفح كافة الكورسات المتكاملة وبنوك الامتحانات المتاحة على منصة المتفلسفة التعليمية.'}
           </p>
         </div>
       )}
 
-      {/* Catalog Header with Search & Filters (Always visible for all users) */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[32px] p-6 sm:p-8 shadow-sm space-y-4">
-        {!isApprovedStudent && (
-          <>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-black text-indigo-700 bg-indigo-50 dark:bg-indigo-950/60 px-3 py-1 rounded-full border border-indigo-100 dark:border-indigo-900">
-                المكتبة الأكاديمية 2027
-              </span>
-            </div>
-            <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white">
-              دليل الكورسات المتكاملة وبنوك الامتحانات
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 max-w-2xl leading-relaxed">
-              تصفح الكورسات المتكاملة (دروس فيديو ومذكرات PDF وامتحانات) بالإضافة إلى بنوك الامتحانات التسلسلية المعتمدة لدفعة 2027 تحت إشراف إدارة المنصة.
+      {/* Catalog Header with Search & Filters */}
+      <div className="space-y-5 rounded-[32px] border border-neutral-200 bg-white p-6 transition-colors dark:border-neutral-800 dark:bg-[#16161A] sm:p-8 theme-surface">
+        <div className="flex flex-wrap items-end justify-between gap-4 border-b border-neutral-200 pb-4 dark:border-neutral-800">
+          <div>
+            <p className="text-xs font-bold text-[#1769D2]">
+              المكتبة الأكاديمية 2027 — أ/ سوزان كريم فهمي
             </p>
-          </>
-        )}
+            <h1 className="font-display mt-1 text-2xl font-extrabold text-[#151515] dark:text-white sm:text-3xl">
+              دليل الكورسات المتكاملة وبنوك الامتحانات
+            </h1>
+            <p className="mt-1 max-w-2xl text-xs leading-relaxed text-neutral-600 dark:text-neutral-400 sm:text-sm">
+              تصفح الكورسات المتكاملة (فيديوهات الشرح، مذكرات PDF، والامتحانات التفاعلية) في مادة الفلسفة والمنطق للصف الأول الثانوي.
+            </p>
+          </div>
+          <div className="font-mono-num shrink-0 rounded-xl border border-neutral-200 bg-[#F3F4F6] px-4 py-2 text-xs font-extrabold text-[#151515] dark:border-neutral-700 dark:bg-[#0D0D0F] dark:text-white">
+            {filteredCourses.length} كورس متاح
+          </div>
+        </div>
 
         {/* Filters and Search */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="relative">
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="ابحث باسم الكورس، المادة، أو المدرس..."
-              className="w-full pl-4 pr-10 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+              placeholder="ابحث باسم الكورس أو المادة..."
+              className="h-11 w-full rounded-xl border border-neutral-200 bg-[#F3F4F6]/60 pl-4 pr-10 text-xs text-[#151515] transition-colors placeholder:text-neutral-400 focus:border-[#1769D2] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1769D2]/15 dark:border-neutral-700 dark:bg-[#0D0D0F] dark:text-white dark:focus:bg-[#0D0D0F] sm:text-sm"
             />
-            <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-3.5 pointer-events-none" />
+            <Search className="pointer-events-none absolute right-3.5 top-3.5 h-4 w-4 text-neutral-400" />
           </div>
 
-          <div>
-            <select
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(e.target.value)}
-              className="w-full px-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 bg-white dark:bg-slate-800 font-bold text-slate-800 dark:text-slate-200"
-            >
-              <option value="all">جميع الصفوف والمراحل (1 ابتدائي - 3 ثانوي)</option>
-              {isApprovedStudent && <option value="my_grade">🎯 صفي الدراسي ({currentUser?.schoolYear})</option>}
-              <optgroup label="المرحلة الابتدائية">
-                <option value="الصف الأول الابتدائي">الصف الأول الابتدائي</option>
-                <option value="الصف الثاني الابتدائي">الصف الثاني الابتدائي</option>
-                <option value="الصف الثالث الابتدائي">الصف الثالث الابتدائي</option>
-                <option value="الصف الرابع الابتدائي">الصف الرابع الابتدائي</option>
-                <option value="الصف الخامس الابتدائي">الصف الخامس الابتدائي</option>
-                <option value="الصف السادس الابتدائي">الصف السادس الابتدائي</option>
-              </optgroup>
-              <optgroup label="المرحلة الإعدادية">
-                <option value="الصف الأول الإعدادي">الصف الأول الإعدادي</option>
-                <option value="الصف الثاني الإعدادي">الصف الثاني الإعدادي</option>
-                <option value="الصف الثالث الإعدادي">الصف الثالث الإعدادي</option>
-              </optgroup>
-              <optgroup label="المرحلة الثانوية">
-                <option value="الصف الأول الثانوي">الصف الأول الثانوي</option>
-                <option value="الصف الثاني الثانوي">الصف الثاني الثانوي</option>
-                <option value="الصف الثالث الثانوي">الصف الثالث الثانوي</option>
-              </optgroup>
-            </select>
-          </div>
+          <select
+            value={selectedYear}
+            onChange={(e) => setSelectedYear(e.target.value)}
+            className="h-11 w-full rounded-xl border border-neutral-200 bg-[#F3F4F6]/60 px-3.5 text-xs font-bold text-[#151515] transition-colors focus:border-[#1769D2] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1769D2]/15 dark:border-neutral-700 dark:bg-[#0D0D0F] dark:text-neutral-200 sm:text-sm"
+          >
+            <option value="all">الصف الأول الثانوي — مادة الفلسفة</option>
+            {isApprovedStudent && (
+              <option value="my_grade">
+                صفي الدراسي ({currentUser?.schoolYear || 'الصف الأول الثانوي'})
+              </option>
+            )}
+            <option value="الصف الأول الثانوي">الصف الأول الثانوي</option>
+          </select>
 
-          <div>
-            <select
-              value={selectedSubject}
-              onChange={(e) => setSelectedSubject(e.target.value)}
-              className="w-full px-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 bg-white dark:bg-slate-800 font-bold text-slate-800 dark:text-slate-200"
-            >
-              <option value="all">جميع المواد الدراسية</option>
-              {subjects.map((sub) => (
-                <option key={sub} value={sub}>
-                  {sub}
-                </option>
-              ))}
-            </select>
-          </div>
+          <select
+            value={selectedSubject}
+            onChange={(e) => setSelectedSubject(e.target.value)}
+            className="h-11 w-full rounded-xl border border-neutral-200 bg-[#F3F4F6]/60 px-3.5 text-xs font-bold text-[#151515] transition-colors focus:border-[#1769D2] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1769D2]/15 dark:border-neutral-700 dark:bg-[#0D0D0F] dark:text-neutral-200 sm:text-sm"
+          >
+            <option value="all">جميع المواد الدراسية</option>
+            {subjects.map((sub) => (
+              <option key={sub} value={sub}>
+                {sub}
+              </option>
+            ))}
+          </select>
 
-          <div>
+          {teachers.length > 1 ? (
             <select
               value={selectedTeacher}
               onChange={(e) => setSelectedTeacher(e.target.value)}
-              className="w-full px-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 bg-white dark:bg-slate-800 font-bold text-slate-800 dark:text-slate-200"
+              className="h-11 w-full rounded-xl border border-neutral-200 bg-[#F3F4F6]/60 px-3.5 text-xs font-bold text-[#151515] transition-colors focus:border-[#1769D2] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1769D2]/15 dark:border-neutral-700 dark:bg-[#0D0D0F] dark:text-neutral-200 sm:text-sm"
             >
-              <option value="all">جميع المعلمين والمشرفين</option>
+              <option value="all">أ/ سوزان كريم فهمي وفريق الإشراف</option>
               {teachers.map((t) => (
                 <option key={t.id} value={t.id}>
-                  {t.gender === 'أنثى' ? '👩‍🏫 المعلمة:' : '👨‍🏫 المعلم:'} {t.name} ({t.subject || 'عام'})
+                  {t.name} ({t.subject || 'الفلسفة والمنطق'})
                 </option>
               ))}
             </select>
-          </div>
+          ) : (
+            <div className="flex items-center gap-1.5 rounded-xl border border-neutral-200 bg-[#F3F4F6]/60 p-1 dark:border-neutral-700 dark:bg-[#0D0D0F]">
+              {[
+                { id: 'all' as const, label: 'الكل' },
+                { id: 'integrated' as const, label: 'شرح متكامل' },
+                { id: 'exams_only' as const, label: 'امتحانات' },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setSelectedType(tab.id)}
+                  className={`flex-1 cursor-pointer rounded-lg py-2 text-xs font-bold transition-colors ${
+                    selectedType === tab.id
+                      ? 'bg-[#E31B23] text-white'
+                      : 'text-neutral-600 hover:text-[#151515] dark:text-neutral-400 dark:hover:text-white'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
+
+        {/* Type Filter Strip when Teacher Dropdown is shown */}
+        {teachers.length > 1 && (
+          <div className="flex flex-wrap items-center gap-2">
+            {[
+              { id: 'all' as const, label: 'كل الكورسات' },
+              { id: 'integrated' as const, label: 'شرح متكامل (فيديو + PDF + امتحان)' },
+              { id: 'exams_only' as const, label: 'بنوك امتحانات فقط' },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setSelectedType(tab.id)}
+                className={`cursor-pointer rounded-xl px-4 py-2 text-xs font-bold transition-colors ${
+                  selectedType === tab.id
+                    ? 'bg-[#E31B23] text-white'
+                    : 'bg-[#F3F4F6] text-neutral-700 hover:bg-neutral-200 dark:bg-[#0D0D0F] dark:text-neutral-300 dark:hover:bg-neutral-800'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Course Bundles & Discount Packages Section (نظام الباقات والعروض المجمعة) */}
+      {/* Course Bundles & Discount Packages Section */}
       <CourseBundlesSection
         courses={publishedCourses}
         currentUser={currentUser}
@@ -254,7 +261,6 @@ export const CoursesView: React.FC<CoursesViewProps> = ({
           saveCurrentUser(updatedUser);
           newEnrolledIds.forEach((cid) => {
             saveStudentEnrolledCourse(currentUser.id, cid);
-            enrollStudentInCourseInFirestore(currentUser.id, cid).catch(() => {});
           });
           const allUsers = getSavedUsers();
           if (allUsers.some((u) => u.id === currentUser.id)) {
@@ -264,61 +270,21 @@ export const CoursesView: React.FC<CoursesViewProps> = ({
         }}
       />
 
-      {/* Courses Search Bar for Student if approved */}
-      {isApprovedStudent && (
-        <div className="flex flex-col sm:flex-row gap-3">
-          <div className="relative flex-1">
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="ابحث في كورسات صفك الدراسي..."
-              className="w-full pl-4 pr-10 py-3 rounded-2xl border border-slate-200 bg-white text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 shadow-xs"
-            />
-            <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-3.5 pointer-events-none" />
-          </div>
-
-          <div className="w-full sm:w-52">
-            <select
-              value={selectedSubject}
-              onChange={(e) => setSelectedSubject(e.target.value)}
-              className="w-full px-4 py-3 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 bg-white font-bold text-slate-800 shadow-xs"
-            >
-              <option value="all">جميع المواد</option>
-              {subjects.map((sub) => (
-                <option key={sub} value={sub}>
-                  {sub}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="w-full sm:w-52">
-            <select
-              value={selectedTeacher}
-              onChange={(e) => setSelectedTeacher(e.target.value)}
-              className="w-full px-4 py-3 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 bg-white font-bold text-slate-800 shadow-xs"
-            >
-              <option value="all">جميع المعلمين</option>
-              {teachers.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.gender === 'أنثى' ? '👩‍🏫' : '👨‍🏫'} {t.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-      )}
-
       {/* Courses Cards Grid */}
       {filteredCourses.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
           {filteredCourses.map((course) => {
-            const isCourseIntegrated = course.courseType === 'integrated' || (course.lessons && course.lessons.length > 0);
+            const isCourseIntegrated =
+              course.courseType === 'integrated' || (course.lessons && course.lessons.length > 0);
             const lessonsCount = course.lessons?.length || 0;
-            const videosCount = course.lessons?.reduce((sum, l) => sum + (l.videos?.length || 0), 0) || 0;
-            const pdfsCount = course.lessons?.reduce((sum, l) => sum + (l.pdfs?.length || 0), 0) || 0;
-            const examsCount = (course.exams?.length || 0) + (course.lessons?.reduce((sum, l) => sum + (l.exams?.length || 0), 0) || 0);
+            const videosCount =
+              course.lessons?.reduce((sum, l) => sum + (l.videos?.length || 0), 0) || 0;
+            const pdfsCount =
+              course.lessons?.reduce((sum, l) => sum + (l.pdfs?.length || 0), 0) || 0;
+            const examsCount =
+              (course.exams?.length || 0) +
+              (course.lessons?.reduce((sum, l) => sum + (l.exams?.length || 0), 0) || 0);
+            const isEnrolled = Boolean(currentUser?.enrolledCourseIds?.includes(course.id));
             const hasDiscount = Boolean(
               course.originalPrice && Number(course.originalPrice) > Number(course.price)
             );
@@ -335,191 +301,129 @@ export const CoursesView: React.FC<CoursesViewProps> = ({
               <div
                 key={course.id}
                 onClick={() => onSelectCourse(course)}
-                className="bg-white border border-slate-200 rounded-[28px] overflow-hidden shadow-xs hover:shadow-md hover:border-indigo-300 transition-all cursor-pointer group flex flex-col justify-between"
+                className="group flex h-full cursor-pointer flex-col justify-between overflow-hidden rounded-3xl border border-neutral-200 bg-white transition-all hover:border-[#E31B23]/60 hover:shadow-lg dark:border-neutral-800 dark:bg-[#16161A]"
               >
                 <div>
-                  <div className="relative h-48 overflow-hidden bg-slate-100">
+                  <div className="relative h-48 overflow-hidden bg-neutral-900">
                     <img
-                      src={course.coverImage}
+                      src={course.coverImage || courseCoverFallback}
                       alt={`كورس ${course.title} - ${course.schoolYear}`}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      className="h-full w-full object-cover opacity-90 transition-transform duration-300 group-hover:scale-105"
                       referrerPolicy="no-referrer"
                       loading="lazy"
                       decoding="async"
                       onError={(e) => {
-                        (e.target as HTMLImageElement).src =
-                          'https://images.unsplash.com/photo-1497633762265-9d179a990aa6?q=80&w=800&auto=format&fit=crop';
+                        const target = e.target as HTMLImageElement;
+                        if (target.src !== courseCoverFallback) {
+                          target.src = courseCoverFallback;
+                        }
                       }}
                     />
-                    <div className="absolute top-3 right-3 flex flex-col gap-1.5 items-start">
-                      <span className="text-[10px] font-black px-3 py-1 rounded-full bg-slate-900/80 text-white backdrop-blur-md">
-                        {course.schoolYear}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent" />
+
+                    {/* Top Right Tags */}
+                    <div className="absolute right-4 top-4 flex flex-col items-start gap-1.5 text-xs font-bold text-white">
+                      <span className="rounded-lg bg-[#1769D2]/90 px-2.5 py-1">
+                        {isCourseIntegrated ? 'شرح متكامل' : 'بنك امتحانات'}
                       </span>
-                      {course.division &&
-                        !(course.schoolYear?.includes('الابتدائي') || course.schoolYear?.includes('الإعدادي')) && (
-                        <span className="text-[9px] font-black px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 font-bold shadow-xs">
+                      {course.division && (
+                        <span className="rounded-md bg-amber-400 px-2 py-0.5 text-[10px] font-extrabold text-neutral-950">
                           {course.division}
                         </span>
                       )}
-                      <span
-                        className={`text-[9px] font-black px-2.5 py-0.5 rounded-full text-white ${
-                          isCourseIntegrated ? 'bg-purple-600/90' : 'bg-emerald-600/90'
-                        }`}
-                      >
-                        {isCourseIntegrated ? 'شرح متكامل (دروس + فيديوهات + PDF)' : 'بنك امتحانات'}
-                      </span>
                     </div>
 
-                    {/* Discount Percentage Badge on Top Left */}
-                    {hasDiscount && !currentUser?.enrolledCourseIds?.includes(course.id) && (
-                      <div className="absolute top-3 left-3 z-10">
-                        <span className="text-[11px] font-black px-3 py-1 rounded-full bg-rose-600 text-white shadow-lg flex items-center gap-1 animate-pulse">
-                          <span>🔥 خصم {discountPercent}%</span>
+                    {/* Top Left Price / Status Badge */}
+                    <div className="absolute left-4 top-4 z-10 flex flex-col items-end gap-1.5 text-xs font-bold text-white">
+                      {isEnrolled ? (
+                        <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-600/95 px-2.5 py-1">
+                          <Unlock className="h-3 w-3" />
+                          <span>مشترك بالكورس</span>
                         </span>
-                      </div>
-                    )}
-
-                    {currentUser?.enrolledCourseIds?.includes(course.id) && (
-                      <div className="absolute top-3 left-3 z-10">
-                        <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-emerald-600 text-white shadow-md flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3" />
-                          <span>مشترك ✅</span>
+                      ) : course.price === 0 ? (
+                        <span className="rounded-lg bg-emerald-600/95 px-2.5 py-1">
+                          مجاني بالكامل
                         </span>
-                      </div>
-                    )}
-
-                    {currentUser?.role === 'teacher' && !currentUser?.enrolledCourseIds?.includes(course.id) && !hasDiscount && (
-                      <div className="absolute top-3 left-3 z-10">
-                        {course.instructorId === currentUser.id ||
-                        course.instructor === currentUser.name ||
-                        course.teacherName === currentUser.name ? (
-                          <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-indigo-600 text-white shadow-md flex items-center gap-1">
-                            <span>كورسي الخاص 👨‍🏫</span>
-                          </span>
-                        ) : (
-                          <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-slate-900/85 text-amber-300 border border-amber-400/40 shadow-md flex items-center gap-1">
-                            <Lock className="w-3 h-3 text-amber-400" />
-                            <span>معلم آخر 🔒</span>
-                          </span>
-                        )}
-                      </div>
-                    )}
-
-                    <div className="absolute bottom-3 left-3">
-                      {hasDiscount ? (
-                        <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-950/90 backdrop-blur-md border border-amber-400/50 shadow-lg">
-                          <span className="text-[11px] font-bold text-rose-400 line-through decoration-2">
-                            {course.originalPrice} {course.priceCurrency}
-                          </span>
-                          <span className="text-xs font-black text-emerald-400">
-                            {course.price === 0 ? 'مجاني' : `${course.price} ${course.priceCurrency}`}
-                          </span>
-                          <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md bg-rose-600 text-white">
-                            -{discountPercent}%
-                          </span>
-                        </div>
                       ) : (
-                        <span
-                          className={`text-xs font-black px-3 py-1 rounded-full shadow-md ${
-                            course.price === 0 ? 'bg-emerald-500 text-white' : 'bg-indigo-600 text-white'
-                          }`}
-                        >
-                          {course.price === 0 ? 'مجاني بالكامل' : `${course.price} ${course.priceCurrency}`}
+                        <span className="font-mono-num rounded-lg bg-[#E31B23] px-2.5 py-1">
+                          {course.price} {course.priceCurrency || 'ج.م'}
+                        </span>
+                      )}
+
+                      {hasDiscount && !isEnrolled && (
+                        <span className="rounded-md bg-neutral-950/90 px-2 py-0.5 text-[10px] font-extrabold text-amber-300 border border-amber-400/40">
+                          خصم {discountPercent}%
                         </span>
                       )}
                     </div>
+
+                    {/* Bottom Scrim Metadata */}
+                    <div className="absolute inset-x-4 bottom-3 flex items-center justify-between gap-2 text-xs font-semibold text-white">
+                      <span className="text-neutral-200">{course.subject}</span>
+                      <span className="font-mono-num text-neutral-100">{course.schoolYear}</span>
+                    </div>
                   </div>
 
-                  <div className="p-6 space-y-3">
-                    <div className="flex items-center justify-between gap-2 text-xs text-slate-500 font-bold">
-                      <div className="flex items-center gap-1.5 truncate">
-                        <span className="text-indigo-600 font-black">{course.subject}</span>
-                        <span>•</span>
-                        <span className="truncate">المعلم: {course.teacherName || course.instructor}</span>
-                      </div>
-                      {(() => {
-                        const matchingTeacher = teachers.find(
-                          (t) =>
-                            t.id === course.instructorId ||
-                            t.name.trim() === (course.teacherName || course.instructor || '').trim() ||
-                            (t.accountNumber && t.accountNumber === course.instructorId)
-                        );
-                        if (matchingTeacher && onSelectTeacher) {
-                          return (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onSelectTeacher(matchingTeacher);
-                              }}
-                              className="px-2.5 py-1 rounded-xl bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white text-[10px] font-black shrink-0 transition-all border border-indigo-200 cursor-pointer"
-                              title="عرض صفحة هذا المعلم وكورساته الخاصة"
-                            >
-                              {matchingTeacher.gender === 'أنثى' ? 'صفحة المعلمة 👩‍🏫' : 'صفحة المعلم 👨‍🏫'}
-                            </button>
-                          );
-                        }
-                        return null;
-                      })()}
-                    </div>
-
-                    <h3 className="text-base font-black text-slate-900 group-hover:text-indigo-600 transition-colors line-clamp-2 leading-snug">
+                  <div className="space-y-2.5 p-6">
+                    <h3 className="font-display line-clamp-2 text-lg font-extrabold leading-snug text-[#151515] transition-colors group-hover:text-[#E31B23] dark:text-white">
                       {course.title}
                     </h3>
 
-                    <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">
+                    <p className="line-clamp-2 text-xs leading-relaxed text-neutral-600 dark:text-neutral-400">
                       {course.description}
                     </p>
 
-                    {/* Prominent Course Price & Discount Box inside Card Body */}
-                    {hasDiscount && (
-                      <div className="p-3 rounded-2xl bg-gradient-to-l from-rose-50 via-amber-50/60 to-emerald-50 border border-rose-200/80 flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-xs font-bold text-slate-500">السعر:</span>
-                          <span className="text-xs sm:text-sm font-black text-rose-500 line-through decoration-2 font-mono">
-                            {course.originalPrice} {course.priceCurrency}
+                    <p className="text-xs font-semibold text-[#1769D2]">
+                      المعلمة: {course.instructor || 'أ/ سوزان كريم فهمي'}
+                    </p>
+
+                    {hasDiscount && !isEnrolled && (
+                      <div className="flex items-center justify-between gap-2 rounded-xl border border-[#E31B23]/25 bg-[#E31B23]/5 px-3 py-2 text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono-num text-neutral-400 line-through">
+                            {course.originalPrice} {course.priceCurrency || 'ج.م'}
                           </span>
-                          <span className="text-sm sm:text-base font-black text-emerald-700 font-mono">
-                            {course.price === 0 ? 'مجاني' : `${course.price} ${course.priceCurrency}`}
+                          <span className="font-mono-num font-extrabold text-[#E31B23]">
+                            {course.price === 0
+                              ? 'مجاني'
+                              : `${course.price} ${course.priceCurrency || 'ج.م'}`}
                           </span>
                         </div>
-                        <span className="px-2.5 py-1 rounded-xl bg-rose-600 text-white text-[11px] font-black shrink-0 shadow-2xs">
-                          خصم {discountPercent}% 🔥
-                        </span>
-                      </div>
-                    )}
-
-                    {/* Integrated stats indicators */}
-                    {isCourseIntegrated && (
-                      <div className="flex flex-wrap items-center gap-2 pt-1">
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-700 flex items-center gap-1">
-                          <Layers className="w-3 h-3" />
-                          <span>{lessonsCount} دروس</span>
-                        </span>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-amber-50 text-amber-800 flex items-center gap-1">
-                          <Video className="w-3 h-3" />
-                          <span>{videosCount} فيديو</span>
-                        </span>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-rose-50 text-rose-700 flex items-center gap-1">
-                          <FileText className="w-3 h-3" />
-                          <span>{pdfsCount} PDF</span>
+                        <span className="rounded-md bg-[#E31B23] px-2 py-0.5 text-[10px] font-bold text-white">
+                          وفر {discountPercent}%
                         </span>
                       </div>
                     )}
                   </div>
                 </div>
 
-                <div className="p-6 pt-3 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
-                    <HelpCircle className="w-3.5 h-3.5 text-indigo-600" />
-                    <span>{examsCount} اختبارات وامتحانات</span>
+                {/* Footer Mini Stats & Action */}
+                <div className="space-y-2.5 border-t border-neutral-100 px-6 py-4 text-xs font-bold text-[#151515] dark:border-neutral-800 dark:text-neutral-200">
+                  <div className="grid grid-cols-4 gap-1.5 text-center text-[11px] text-neutral-500 dark:text-neutral-400">
+                    <span className="font-mono-num rounded-lg bg-[#F3F4F6] py-1 dark:bg-[#0D0D0F]">
+                      {lessonsCount} دروس
+                    </span>
+                    <span className="font-mono-num rounded-lg bg-[#F3F4F6] py-1 dark:bg-[#0D0D0F]">
+                      {videosCount} فيديو
+                    </span>
+                    <span className="font-mono-num rounded-lg bg-[#F3F4F6] py-1 dark:bg-[#0D0D0F]">
+                      {pdfsCount} ملفات
+                    </span>
+                    <span className="font-mono-num rounded-lg bg-[#F3F4F6] py-1 dark:bg-[#0D0D0F]">
+                      {examsCount} امتحان
+                    </span>
                   </div>
 
-                  <div>
-                    {currentUser?.enrolledCourseIds?.includes(course.id) ? (
-                      <span className="text-xs font-black text-emerald-600 flex items-center gap-1 group-hover:-translate-x-1 transition-transform">
-                        <span>متابعة الكورس 🎓</span>
-                        <ArrowLeft className="w-3.5 h-3.5" />
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="inline-flex items-center gap-1 text-[11px] text-neutral-500 dark:text-neutral-400">
+                      <ClipboardCheck className="h-3.5 w-3.5 text-[#1769D2]" />
+                      امتحانات وتدريبات تفاعلية
+                    </span>
+
+                    {isEnrolled ? (
+                      <span className="inline-flex items-center gap-1 text-emerald-600 group-hover:underline">
+                        <Check className="h-3.5 w-3.5" />
+                        <span>فتح الكورس ←</span>
                       </span>
                     ) : course.price === 0 ? (
                       <button
@@ -538,34 +442,21 @@ export const CoursesView: React.FC<CoursesViewProps> = ({
                           };
                           saveCurrentUser(updatedUser);
                           saveStudentEnrolledCourse(currentUser.id, course.id);
-                          enrollStudentInCourseInFirestore(currentUser.id, course.id).catch(() => {});
                           const allUsers = getSavedUsers();
                           saveUsers(allUsers.map((u) => (u.id === updatedUser.id ? updatedUser : u)));
                           onUpdateUser?.(updatedUser);
                           onSelectCourse(course);
                         }}
-                        className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow-md shadow-emerald-600/20 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer"
-                        title="اشترك في هذا الكورس المجاني فوراً وفتح المحتوى"
+                        className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-1.5 text-xs font-extrabold text-white transition-colors hover:bg-emerald-700"
+                        title="اشترك في هذا الكورس المجاني فوراً وافتح المحتوى"
                       >
-                        <Sparkles className="w-3.5 h-3.5" />
-                        <span>اشترك مجاناً 🎁</span>
+                        <Sparkles className="h-3.5 w-3.5" />
+                        <span>فتح الكورس مجاناً</span>
                       </button>
                     ) : (
-                      <span className="text-xs font-black text-indigo-600 flex items-center gap-1.5 group-hover:-translate-x-1 transition-transform">
-                        {hasDiscount ? (
-                          <>
-                            <span>اشترك الآن</span>
-                            <span className="text-rose-400 line-through text-[11px] font-bold">
-                              {course.originalPrice} ج.م
-                            </span>
-                            <span className="text-emerald-600 font-black">
-                              ({course.price} ج.م)
-                            </span>
-                          </>
-                        ) : (
-                          <span>اشترك الآن ({course.price} ج.م)</span>
-                        )}
-                        <ArrowLeft className="w-3.5 h-3.5" />
+                      <span className="inline-flex items-center gap-1 font-extrabold text-[#E31B23] group-hover:underline">
+                        <span>اشتراك الآن ({course.price} {course.priceCurrency || 'ج.م'})</span>
+                        <ArrowLeft className="h-3.5 w-3.5" />
                       </span>
                     )}
                   </div>
@@ -575,17 +466,20 @@ export const CoursesView: React.FC<CoursesViewProps> = ({
           })}
         </div>
       ) : (
-        <div className="text-center py-16 bg-white border border-slate-200 rounded-[32px] p-8 space-y-3">
-          <BookOpen className="w-12 h-12 text-slate-300 mx-auto" />
-          <h3 className="text-base font-black text-slate-800">
-            {courses.length === 0 ? 'لا توجد كورسات مضافة على المنصة حالياً' : 'لا توجد كورسات مطابقة لخيارات البحث'}
-          </h3>
-          <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+        <div className="space-y-3 rounded-[32px] border border-neutral-200 bg-white p-10 text-center dark:border-neutral-800 dark:bg-[#16161A]">
+          <BookOpen className="mx-auto h-12 w-12 text-neutral-300 dark:text-neutral-600" />
+          <h3 className="font-display text-base font-black text-[#151515] dark:text-white">
             {courses.length === 0
-              ? 'سيتم إضافة الكورسات والمناهج والامتحانات المعتمدة قريباً بواسطة المعلمين والإدارة.'
+              ? 'لا توجد كورسات مضافة على المنصة حالياً'
+              : 'لا توجد كورسات مطابقة لخيارات البحث'}
+          </h3>
+          <p className="mx-auto max-w-md text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
+            {courses.length === 0
+              ? 'سيتم إضافة الكورسات والمناهج والامتحانات المعتمدة قريباً بواسطة المعلمة والإدارة.'
               : 'جرب تغيير نوع الكورس، المادة، أو السنة الدراسية لعرض النتائج.'}
           </p>
           <button
+            type="button"
             onClick={() => {
               setSelectedYear('all');
               setSelectedSubject('all');
@@ -593,9 +487,9 @@ export const CoursesView: React.FC<CoursesViewProps> = ({
               setSelectedType('all');
               setSearchQuery('');
             }}
-            className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs transition-colors cursor-pointer"
+            className="cursor-pointer rounded-xl bg-[#E31B23] px-5 py-2.5 text-xs font-bold text-white transition-colors hover:bg-[#B5121B]"
           >
-            عرض كافة الكورسات والمناهج المتاحة
+            عرض كافة الكورسات المتاحة
           </button>
         </div>
       )}

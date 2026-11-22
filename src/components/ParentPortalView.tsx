@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { User, Course, StudentExamSubmission, PlatformSettings } from '../types';
 import { getSavedSubmissions, deduplicateSubmissions } from '../data/initialData';
-import { getIdToken } from '../auth';
+import { getClientAuthHeaders } from '../utils/authToken';
 
 interface ParentPortalViewProps {
   parentPhone: string;
@@ -61,13 +61,10 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
     const loadStudentDetails = async () => {
       if (!selectedStudent?.id) return;
       try {
-        const token = await getIdToken();
+        const headers = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
         const res = await fetch('/api/parents/student-details', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-          },
+          headers,
           body: JSON.stringify({ studentId: selectedStudent.id }),
         });
         if (res.ok) {
@@ -136,7 +133,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
   // Handle Share WhatsApp with Supervisor
   const handleShareWithSupervisor = () => {
     if (!selectedStudent) return;
-    const msg = `السلام عليكم أستاذ ${platformSettings.supervisorName}،\nأنا ولي أمر الطالب (${selectedStudent.name}) المسجل في منصة قلب العلم.\n` +
+    const msg = `السلام عليكم أستاذ ${platformSettings.supervisorName}،\nأنا ولي أمر الطالب (${selectedStudent.name}) المسجل في منصة المتفلسفة .\n` +
       `الصف: ${selectedStudent.schoolYear}\n` +
       `الكورسات المشترك بها: ${totalEnrolledCount} كورس\n` +
       `عدد الامتحانات المكتملة: ${totalCompletedExamsCount}\n` +
@@ -152,7 +149,7 @@ export const ParentPortalView: React.FC<ParentPortalViewProps> = ({
     if (!selectedStudent) return;
     const cleanDigits = parentPhone.replace(/\D/g, '');
     const cleanEgyptNum = cleanDigits.replace(/^20/, '').replace(/^0/, '');
-    const msg = `🎓 *تقرير الطالب الأكاديمي - منصة قلب العلم التعليمية*\n` +
+    const msg = `🎓 *تقرير الطالب الأكاديمي - منصة المتفلسفة  التعليمية*\n` +
       `👤 اسم الطالب: *${selectedStudent.name}*\n` +
       `🏫 المرحلة: ${selectedStudent.schoolYear}\n` +
       `📚 الكورسات المشترك بها: ${totalEnrolledCount} كورس\n` +

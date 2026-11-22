@@ -13,6 +13,7 @@ import {
   Maximize2
 } from 'lucide-react';
 import { ChatMessage, BacBranch } from '../types';
+import { getClientAuthHeaders } from '../utils/authToken';
 
 interface FloatingAITutorProps {
   branch: BacBranch;
@@ -64,9 +65,10 @@ export const FloatingAITutor: React.FC<FloatingAITutorProps> = ({
     setIsLoading(true);
 
     try {
+      const headers = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
       const response = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           message: userText,
           branch,

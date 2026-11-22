@@ -36,12 +36,13 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
   const [isOpen, setIsOpen] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
     try {
-      return localStorage.getItem('qalb_alam_sound_enabled') !== 'false';
+      return localStorage.getItem('al_motafalsifa_sound_enabled') !== 'false';
     } catch {
       return true;
     }
   });
   const [permissionStatus, setPermissionStatus] = useState<NotificationPermission | 'unsupported'>('default');
+  const [permissionFeedback, setPermissionFeedback] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Sync notifications from localStorage and custom events
@@ -54,7 +55,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
       }
     };
 
-    window.addEventListener('qalb_alam_notifications_updated', handleUpdate);
+    window.addEventListener('al_motafalsifa_notifications_updated', handleUpdate);
     window.addEventListener('storage', handleUpdate);
 
     if (typeof window !== 'undefined' && 'Notification' in window) {
@@ -64,7 +65,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
     }
 
     return () => {
-      window.removeEventListener('qalb_alam_notifications_updated', handleUpdate);
+      window.removeEventListener('al_motafalsifa_notifications_updated', handleUpdate);
       window.removeEventListener('storage', handleUpdate);
     };
   }, []);
@@ -107,7 +108,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
     const next = !soundEnabled;
     setSoundEnabled(next);
     try {
-      localStorage.setItem('qalb_alam_sound_enabled', String(next));
+      localStorage.setItem('al_motafalsifa_sound_enabled', String(next));
     } catch {}
     if (next) {
       playNotificationSound();
@@ -115,12 +116,13 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
   };
 
   const handleEnableDeviceNotifications = async () => {
+    setPermissionFeedback(null);
     const result = await requestDeviceNotificationPermission();
     setPermissionStatus(result);
     if (result === 'granted') {
       playNotificationSound();
       try {
-        new Notification('منصة قلب العلم التعليمية', {
+        new Notification('منصة المتفلسفة  التعليمية', {
           body: 'تم تفعيل إشعارات الجهاز بنجاح! ستصلك التنبيهات الرسمية من المشرف العام فور صدورها.',
           icon: '/logo.png',
           dir: 'rtl',
@@ -128,6 +130,8 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
       } catch (e) {
         console.warn(e);
       }
+    } else if (result === 'denied') {
+      setPermissionFeedback('الإشعارات محظورة من إعدادات المتصفح — يمكنك السماح بها من أيقونة القفل بجانب الرابط.');
     }
   };
 
@@ -198,7 +202,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
                     سحابي مباشر
                   </span>
                 </div>
-                <p className="text-[10px] text-amber-300 font-medium">منصة قلب العلم لدفعة 2027</p>
+                <p className="text-[10px] text-amber-300 font-medium">منصة المتفلسفة  لدفعة 2027</p>
               </div>
             </div>
 
@@ -253,19 +257,27 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
 
           {/* Device Notification Activation Banner */}
           {permissionStatus !== 'granted' && permissionStatus !== 'unsupported' && (
-            <div className="p-3 bg-amber-50 dark:bg-amber-950/60 border-b border-amber-200 dark:border-amber-900/60 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <Smartphone className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
-                <span className="text-[11px] text-amber-900 dark:text-amber-200 font-bold leading-tight">
-                  فعّل إشعارات جهازك لتصلك تنبيهات الإدارة فوراً
-                </span>
+            <div className="p-3 bg-amber-50 dark:bg-amber-950/60 border-b border-amber-200 dark:border-amber-900/60 space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Smartphone className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <span className="text-[11px] text-amber-900 dark:text-amber-200 font-bold leading-tight">
+                    فعّل إشعارات جهازك لتصلك تنبيهات الإدارة فوراً
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleEnableDeviceNotifications}
+                  className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-[10px] shrink-0 shadow-xs transition-colors cursor-pointer"
+                >
+                  تفعيل الإشعارات 🔔
+                </button>
               </div>
-              <button
-                onClick={handleEnableDeviceNotifications}
-                className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-[10px] shrink-0 shadow-xs transition-colors cursor-pointer"
-              >
-                تفعيل الإشعارات 🔔
-              </button>
+              {permissionFeedback && (
+                <p className="text-[10px] font-bold text-rose-700 dark:text-rose-300 leading-snug">
+                  {permissionFeedback}
+                </p>
+              )}
             </div>
           )}
 

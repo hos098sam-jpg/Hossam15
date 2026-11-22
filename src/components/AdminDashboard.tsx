@@ -25,7 +25,6 @@ import {
   RefreshCw,
   Award,
   AlertCircle,
-  ExternalLink,
   Phone,
   IdCard,
   MapPin,
@@ -38,7 +37,6 @@ import {
   Key,
   Copy,
   Image,
-  CheckSquare,
   FileEdit,
   HelpCircle,
   GraduationCap,
@@ -49,9 +47,6 @@ import {
   Cloud,
   Database,
   LayoutGrid,
-  List,
-  Printer,
-  Download,
   CreditCard,
   Smartphone,
   MessageSquare,
@@ -60,13 +55,14 @@ import {
   Gift,
   RotateCw,
   BarChart3,
-  Percent
+  Palette
 } from 'lucide-react';
 import { doc, setDoc } from 'firebase/firestore';
 import { AdminWhatsAppManager } from './AdminWhatsAppManager';
 import { LuckyWheelModal } from './LuckyWheelModal';
 import { ParentWhatsappReportModal, buildDirectParentWhatsappUrl } from './ParentWhatsappReportModal';
-import qalbAlElmLogo from '../assets/images/qalb_alelm_official_logo_1791663594965.jpg';
+const motafalsifaLogo = '/logo.png';
+import { getClientAuthHeaders } from '../utils/authToken';
 import {
   calculateStudentStats,
   calculateGradeAggregateStats,
@@ -84,18 +80,14 @@ import {
   PlatformSettings,
   ExamQuestion,
   SchoolYearGrade,
-  CourseAccessCode,
   StudentExamSubmission,
   PlatformNotification,
-  WalletRechargeCode,
   WalletTransaction
 } from '../types';
 import { CourseLessonManagerModal } from './CourseLessonManagerModal';
-import { TeacherAssistantsModal, getAssistantSpecialtyMeta } from './TeacherAssistantsModal';
-import { SubscriptionCard } from './SubscriptionCard';
-import { WalletGatewayAdminTab } from './WalletGatewayAdminTab';
 import { AdminAnalyticsDashboard } from './AdminAnalyticsDashboard';
 import { AdminSupportChatTab } from './AdminSupportChatTab';
+import { WeeklyCourseSalesPage } from './WeeklyCourseSalesPage';
 import {
   saveUsers,
   saveSingleUserToServer,
@@ -106,11 +98,6 @@ import {
   addDeletedUserId,
   saveExamToStore,
   saveCompetitions,
-  getSavedAccessCodes,
-  saveAccessCodes,
-  getSavedWalletCodes,
-  saveWalletCodes,
-  fetchWalletCodesFromServer,
   getSavedSubmissions,
   saveSubmissions,
   forcePushAllToFirebase,
@@ -129,7 +116,7 @@ import {
   clearAllNotifications,
   requestDeviceNotificationPermission
 } from '../utils/notifications';
-import { db, updateUserStatusInFirestore, updateUserEnrolledCoursesInFirestore, deleteUserFromFirestore } from '../auth';
+import { db, deleteUserFromFirestore } from '../auth';
 
 interface AdminDashboardProps {
   currentUser: User | null;
@@ -137,15 +124,28 @@ interface AdminDashboardProps {
   competitions: Competition[];
   students: User[];
   platformSettings: PlatformSettings;
+  requestedTab?: string | null;
+  requestedTabNonce?: number;
   onUpdateCourses: (courses: Course[]) => void;
   onUpdateCompetitions: (competitions: Competition[]) => void;
   onUpdateStudents: (students: User[]) => void;
   onUpdateSettings: (settings: PlatformSettings) => void;
   onOpenAuth: () => void;
-  onSelectTeacher?: (teacher: User) => void;
-  onViewTeacherProfile?: (teacher: User) => void;
   onOpenHomeVisualEditor?: () => void;
+  onOpenThemeCustomizer?: () => void;
 }
+
+type AdminTabType =
+  | 'analytics'
+  | 'weekly_sales'
+  | 'students'
+  | 'courses'
+  | 'manual_exam'
+  | 'competitions'
+  | 'settings'
+  | 'notifications'
+  | 'whatsapp'
+  | 'support_chat';
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   currentUser,
@@ -153,24 +153,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   competitions,
   students,
   platformSettings,
+  requestedTab,
+  requestedTabNonce,
   onUpdateCourses,
   onUpdateCompetitions,
   onUpdateStudents,
   onUpdateSettings,
   onOpenAuth,
-  onSelectTeacher,
-  onViewTeacherProfile,
   onOpenHomeVisualEditor,
+  onOpenThemeCustomizer,
 }) => {
-  const [activeTab, setActiveTab] = useState<
-    'analytics' | 'students' | 'teachers' | 'courses' | 'manual_exam' | 'essay_reviews' | 'access_codes' | 'coupons' | 'competitions' | 'settings' | 'notifications' | 'whatsapp' | 'fawaterak' | 'support_chat'
-  >('students');
+  const [activeTab, setActiveTab] = useState<AdminTabType>('students');
   const [isFullPageMode, setIsFullPageMode] = useState<boolean>(false);
   const [reportModalStudent, setReportModalStudent] = useState<User | null>(null);
 
-  const openSectionFullPage = (
-    tab: 'analytics' | 'students' | 'teachers' | 'courses' | 'manual_exam' | 'essay_reviews' | 'access_codes' | 'coupons' | 'competitions' | 'settings' | 'notifications' | 'whatsapp' | 'fawaterak' | 'support_chat'
-  ) => {
+  useEffect(() => {
+    if (requestedTab) {
+      setActiveTab(requestedTab as AdminTabType);
+      setIsFullPageMode(true);
+    }
+  }, [requestedTab, requestedTabNonce]);
+
+  const openSectionFullPage = (tab: AdminTabType) => {
     setActiveTab(tab);
     setIsFullPageMode(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -191,8 +195,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const handleStatus = (e: any) => {
       if (e.detail) setCloudStatus(e.detail);
     };
-    window.addEventListener('qalb_alam_cloud_status', handleStatus);
-    return () => window.removeEventListener('qalb_alam_cloud_status', handleStatus);
+    window.addEventListener('al_motafalsifa_cloud_status', handleStatus);
+    return () => window.removeEventListener('al_motafalsifa_cloud_status', handleStatus);
   }, []);
 
   // --- Notifications Broadcast State ---
@@ -212,8 +216,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         setSavedNotifsList(getSavedNotifications());
       }
     };
-    window.addEventListener('qalb_alam_notifications_updated', handleUpdate);
-    return () => window.removeEventListener('qalb_alam_notifications_updated', handleUpdate);
+    window.addEventListener('al_motafalsifa_notifications_updated', handleUpdate);
+    return () => window.removeEventListener('al_motafalsifa_notifications_updated', handleUpdate);
   }, []);
 
   const handleBroadcastNotification = async (e: React.FormEvent) => {
@@ -270,7 +274,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     if (granted) {
       await broadcastNotification(
         '🔔 اختبار إشعار الجهاز والسحابة',
-        'يعمل نظام إشعارات الأجهزة وسحابة Firebase بنجاح على منصة قلب العلم التعليمية!',
+        'يعمل نظام إشعارات الأجهزة وسحابة Firebase بنجاح على منصة المتفلسفة  التعليمية!',
         'normal',
         'all'
       );
@@ -293,16 +297,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // --- Course Creation Modal / State ---
   const [isAddCourseModalOpen, setIsAddCourseModalOpen] = useState(false);
   const [newCourseTitle, setNewCourseTitle] = useState('');
-  const [newCourseYear, setNewCourseYear] = useState<SchoolYearGrade>('الصف الثالث الثانوي');
+  const [newCourseYear, setNewCourseYear] = useState<SchoolYearGrade>('الصف الأول الثانوي');
   const [newCourseDivision, setNewCourseDivision] = useState<string>('عام لجميع الشعب');
-  const [newCourseSubject, setNewCourseSubject] = useState('الفيزياء');
+  const [newCourseSubject, setNewCourseSubject] = useState('الفلسفة والمنطق');
   const [newCoursePrice, setNewCoursePrice] = useState<number>(180);
   const [newCoursePaymentPhone, setNewCoursePaymentPhone] = useState<string>('');
   const [newCoursePaymentQrCode, setNewCoursePaymentQrCode] = useState<string>('');
   const [newCourseCover, setNewCourseCover] = useState('https://images.unsplash.com/photo-1636466497217-26a8cbeaf0aa?q=80&w=800&auto=format&fit=crop');
   const [newCourseDesc, setNewCourseDesc] = useState('');
   const [newCourseInstructor, setNewCourseInstructor] = useState('إدارة المنصة');
-  const [newCourseTeacherId, setNewCourseTeacherId] = useState<string>('');
   const [newCourseType, setNewCourseType] = useState<CourseType>('integrated');
   const [managingLessonsCourse, setManagingLessonsCourse] = useState<Course | null>(null);
 
@@ -343,35 +346,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   ]);
 
-  // --- Access Codes & Wallet Recharge Codes State ---
-  const [accessCodes, setAccessCodes] = useState<CourseAccessCode[]>([]);
-  const [walletCodes, setWalletCodes] = useState<WalletRechargeCode[]>([]);
-  const [walletCodeAmount, setWalletCodeAmount] = useState<number>(100);
-  const [walletCodeCount, setWalletCodeCount] = useState<number>(5);
-  const [walletCodeNote, setWalletCodeNote] = useState<string>('');
+  // --- Student Direct Wallet Top-Up State ---
   const [directTopUpAmount, setDirectTopUpAmount] = useState<number>(100);
   const [directTopUpMode, setDirectTopUpMode] = useState<'add' | 'set'>('add');
-  const [codeSelectedCourse, setCodeSelectedCourse] = useState<string>(courses[0]?.id || 'general');
-  const [codeCustomCourseTitle, setCodeCustomCourseTitle] = useState<string>('');
-  const [codeTeacherName, setCodeTeacherName] = useState<string>(platformSettings.supervisorName || 'إدارة المنصة');
-  const [codeCount, setCodeCount] = useState<number>(5);
-  const [copiedCode, setCopiedCode] = useState<string | null>(null);
-  const [accessCodesDisplayMode, setAccessCodesDisplayMode] = useState<'cards' | 'table'>('cards');
-  const [selectedCardForModal, setSelectedCardForModal] = useState<CourseAccessCode | null>(null);
-  const [codeSearchQuery, setCodeSearchQuery] = useState<string>('');
-  const [codeFilterStatus, setCodeFilterStatus] = useState<'all' | 'available' | 'used'>('all');
 
-  // --- Submissions & Essay Review State ---
+  // --- Submissions (used for student analytics & parent reports) ---
   const [submissions, setSubmissions] = useState<StudentExamSubmission[]>([]);
-  const [selectedSubmissionForReview, setSelectedSubmissionForReview] = useState<StudentExamSubmission | null>(null);
-  const [reviewMarksInput, setReviewMarksInput] = useState<Record<string, number>>({});
-  const [reviewNotesInput, setReviewNotesInput] = useState<Record<string, string>>({});
-  const [reviewModelImagesInput, setReviewModelImagesInput] = useState<Record<string, string>>({});
 
   // --- Competition Creation State ---
   const [isAddCompModalOpen, setIsAddCompModalOpen] = useState(false);
   const [compTitle, setCompTitle] = useState('');
-  const [compYear, setCompYear] = useState<string>('الصف الثالث الثانوي');
+  const [compYear, setCompYear] = useState<string>('الصف الأول الثانوي');
   const [compDuration, setCompDuration] = useState<number>(15);
   const [compDesc, setCompDesc] = useState('');
   const [compPrize, setCompPrize] = useState('');
@@ -379,33 +364,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // --- Settings State ---
   const [settingsForm, setSettingsForm] = useState<PlatformSettings>(platformSettings);
 
-  // Load codes and submissions on mount
+  // Load submissions on mount
   useEffect(() => {
-    setAccessCodes(getSavedAccessCodes());
-    setWalletCodes(getSavedWalletCodes());
-    fetchWalletCodesFromServer().then((codes) => {
-      if (Array.isArray(codes) && codes.length > 0) setWalletCodes(codes);
-    });
     setSubmissions(getSavedSubmissions());
   }, []);
-
-  // --- Teachers Management State ---
-  const teachers = students.filter((s) => s.role === 'teacher' && !s.isAssistant);
-  const [managingAssistantsTeacher, setManagingAssistantsTeacher] = useState<User | null>(null);
-  const [isTeacherModalOpen, setIsTeacherModalOpen] = useState(false);
-  const [editingTeacherId, setEditingTeacherId] = useState<string | null>(null);
-  const [teacherName, setTeacherName] = useState('');
-  const [teacherAvatar, setTeacherAvatar] = useState(
-    'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=400&auto=format&fit=crop'
-  );
-  const [teacherSubject, setTeacherSubject] = useState('فيزياء');
-  const [teacherCustomSubject, setTeacherCustomSubject] = useState('');
-  const [teacherSpecialty, setTeacherSpecialty] = useState('شعبة علمي علوم');
-  const [teacherGender, setTeacherGender] = useState<'ذكر' | 'أنثى'>('ذكر');
-  const [teacherSchoolYear, setTeacherSchoolYear] = useState<string>('الصف الثالث الثانوي');
-  const [teacherAccountNumber, setTeacherAccountNumber] = useState('');
-  const [teacherPassword, setTeacherPassword] = useState('123456');
-  const [showPasswordMap, setShowPasswordMap] = useState<Record<string, boolean>>({});
 
   // Course Edit Modal for Admin
   const [editingCourseAdmin, setEditingCourseAdmin] = useState<Course | null>(null);
@@ -414,13 +376,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [editCourseType, setEditCourseType] = useState<CourseType>('integrated');
   const [editCoursePrice, setEditCoursePrice] = useState(0);
   const [editCourseDesc, setEditCourseDesc] = useState('');
-  const [editCourseSchoolYear, setEditCourseSchoolYear] = useState('الصف الثالث الثانوي');
+  const [editCourseSchoolYear, setEditCourseSchoolYear] = useState('الصف الأول الثانوي');
   const [editCourseDivision, setEditCourseDivision] = useState('عام لجميع الشعب');
-  const [editCourseSubject, setEditCourseSubject] = useState('فيزياء');
+  const [editCourseSubject, setEditCourseSubject] = useState('الفلسفة والمنطق');
   const [editCourseCover, setEditCourseCover] = useState('');
   const [editCoursePaymentPhone, setEditCoursePaymentPhone] = useState('');
   const [editCoursePaymentQrCode, setEditCoursePaymentQrCode] = useState('');
-  const [courseOwnerFilter, setCourseOwnerFilter] = useState<'all' | 'teachers' | 'admin'>('all');
 
   // Filter students (excluding teachers, assistants, and admin)
   const registeredStudents = students.filter(
@@ -520,189 +481,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       };
       reader.readAsDataURL(file);
     });
-  };
-
-  // --- Teacher Handlers ---
-  const handleOpenAddTeacher = () => {
-    setEditingTeacherId(null);
-    setTeacherName('');
-    setTeacherGender('ذكر');
-    setTeacherSchoolYear('الصف الثالث الثانوي');
-    setTeacherAvatar('https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=400&auto=format&fit=crop');
-    setTeacherSubject('فيزياء');
-    setTeacherCustomSubject('');
-    setTeacherSpecialty('شعبة علمي علوم');
-    setTeacherAccountNumber(`teacher-${Math.floor(1000 + Math.random() * 9000)}`);
-    setTeacherPassword('123456');
-    setIsTeacherModalOpen(true);
-  };
-
-  const handleOpenEditTeacher = (t: User) => {
-    setEditingTeacherId(t.id);
-    setTeacherName(t.name);
-    setTeacherGender(t.gender === 'أنثى' ? 'أنثى' : 'ذكر');
-    setTeacherSchoolYear(t.schoolYear || 'الصف الثالث الثانوي');
-    setTeacherAvatar(t.avatarUrl || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=400&auto=format&fit=crop');
-    setTeacherSubject(t.subject || 'فيزياء');
-    setTeacherCustomSubject('');
-    setTeacherSpecialty(t.specialty || 'عام لجميع الشعب');
-    setTeacherAccountNumber(t.accountNumber || t.phone);
-    setTeacherPassword(t.password || '123456');
-    setIsTeacherModalOpen(true);
-  };
-
-  const handleSaveTeacher = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!teacherName.trim()) {
-      showFeedback('يرجى إدخال اسم المدرس', 'error');
-      return;
-    }
-    if (!teacherAccountNumber.trim()) {
-      showFeedback('يرجى تحديد رقم الحساب أو الهاتف للدخول', 'error');
-      return;
-    }
-    if (!teacherPassword.trim()) {
-      showFeedback('يرجى تحديد كلمة المرور الخاصة بالمعلم', 'error');
-      return;
-    }
-
-    const finalSubject =
-      teacherSubject === 'أخرى' && teacherCustomSubject.trim()
-        ? teacherCustomSubject.trim()
-        : teacherSubject;
-
-    if (editingTeacherId) {
-      const finalSpecialty = isPrimaryOrPrepGrade(teacherSchoolYear) ? '' : teacherSpecialty;
-      let updatedTeacherObj: User | null = null;
-      const updated = students.map((s) => {
-        if (s.id === editingTeacherId) {
-          updatedTeacherObj = {
-            ...s,
-            name: teacherName.trim(),
-            gender: teacherGender,
-            schoolYear: teacherSchoolYear,
-            avatarUrl: teacherAvatar,
-            subject: finalSubject,
-            specialty: finalSpecialty,
-            accountNumber: teacherAccountNumber.trim(),
-            phone: teacherAccountNumber.trim(),
-            password: teacherPassword.trim(),
-          };
-          return updatedTeacherObj;
-        }
-        return s;
-      });
-      onUpdateStudents(updated);
-      saveUsers(updated);
-      if (updatedTeacherObj) {
-        const firestoreSafeTeacher = { ...(updatedTeacherObj as User) };
-        delete (firestoreSafeTeacher as any).password;
-        setDoc(doc(db, 'users', editingTeacherId), firestoreSafeTeacher, { merge: true }).catch(() => {});
-      }
-      showFeedback('تم تحديث بيانات المعلم بنجاح ✅');
-    } else {
-      const duplicate = students.some(
-        (s) =>
-          s.phone === teacherAccountNumber.trim() ||
-          (s.accountNumber && s.accountNumber === teacherAccountNumber.trim())
-      );
-      if (duplicate) {
-        showFeedback('رقم الحساب أو الهاتف مسجل بالفعل لمستخدم آخر', 'error');
-        return;
-      }
-
-      const finalSpecialty = isPrimaryOrPrepGrade(teacherSchoolYear) ? '' : teacherSpecialty;
-      const newTeacher: User = {
-        id: `teacher-${Date.now()}`,
-        name: teacherName.trim(),
-        gender: teacherGender,
-        avatarUrl: teacherAvatar,
-        subject: finalSubject,
-        specialty: finalSpecialty,
-        accountNumber: teacherAccountNumber.trim(),
-        phone: teacherAccountNumber.trim(),
-        password: teacherPassword.trim(),
-        parentPhone: '',
-        schoolYear: teacherSchoolYear,
-        role: 'teacher',
-        status: 'active',
-        registeredAt: new Date().toISOString().split('T')[0],
-      };
-
-      const updated = [...students, newTeacher];
-      onUpdateStudents(updated);
-      saveUsers(updated);
-      const firestoreSafeNewTeacher = { ...newTeacher };
-      delete (firestoreSafeNewTeacher as any).password;
-      setDoc(doc(db, 'users', newTeacher.id), firestoreSafeNewTeacher, { merge: true }).catch(() => {});
-      showFeedback(`تمت إضافة ${teacherGender === 'أنثى' ? 'المعلمة' : 'المعلم'} (${newTeacher.name}) بنجاح! يمكن الآن الدخول ورفع الكورسات ✅`);
-    }
-
-    setIsTeacherModalOpen(false);
-    setEditingTeacherId(null);
-  };
-
-  const [teacherToDelete, setTeacherToDelete] = useState<User | null>(null);
-  const [deleteTeacherCoursesToo, setDeleteTeacherCoursesToo] = useState<boolean>(true);
-
-  const handleDeleteTeacher = (teacherId: string, name: string) => {
-    const target = students.find((s) => s.id === teacherId) || {
-      id: teacherId,
-      name,
-      phone: '',
-      parentPhone: '',
-      schoolYear: 'الصف الثالث الثانوي',
-      registeredAt: new Date().toISOString(),
-      role: 'teacher' as const,
-    };
-    setTeacherToDelete(target);
-    setDeleteTeacherCoursesToo(true);
-  };
-
-  const confirmDeleteTeacherNow = async (teacherId: string, name: string, alsoDeleteCourses: boolean = true) => {
-    const targetObj = students.find((s) => s.id === teacherId);
-    const teacherNameTrimmed = (name || targetObj?.name || '').trim();
-    const teacherAccount = targetObj?.accountNumber || targetObj?.phone || '';
-
-    addDeletedUserId(teacherId);
-    if (teacherAccount) addDeletedUserId(teacherAccount);
-
-    const updated = students.filter((s) => s.id !== teacherId);
-    onUpdateStudents(updated);
-    saveUsers(updated);
-    deleteUserFromFirestore(teacherId).catch(() => {});
-    deleteUserFromServer(teacherId).catch(() => {});
-
-    if (alsoDeleteCourses) {
-      const isTeacherCourse = (c: Course) => {
-        if (c.instructorId && (c.instructorId === teacherId || (teacherAccount && c.instructorId === teacherAccount))) {
-          return true;
-        }
-        if (teacherNameTrimmed) {
-          if (c.instructor && c.instructor.trim() === teacherNameTrimmed) return true;
-          if (c.teacherName && c.teacherName.trim() === teacherNameTrimmed) return true;
-        }
-        return false;
-      };
-
-      const teacherCoursesToDelete = courses.filter(isTeacherCourse);
-      const remainingCourses = courses.filter((c) => !isTeacherCourse(c));
-      onUpdateCourses(remainingCourses);
-      saveCourses(remainingCourses);
-      teacherCoursesToDelete.forEach((tc) => {
-        deleteCourseFromServer(tc.id).catch(() => {});
-      });
-    }
-
-    setTeacherToDelete(null);
-    setIsTeacherModalOpen(false);
-    setEditingTeacherId(null);
-    showFeedback(
-      alsoDeleteCourses
-        ? `تم حذف حساب المعلم "${name}" وجميع كورساته المرتبطة نهائياً من المنصة 🗑️`
-        : `تم حذف حساب المعلم "${name}" بنجاح من المنصة 🗑️`,
-      'error'
-    );
   };
 
   // --- Admin Course Discount ("تنزيل خصم على الكورس بعد إضافته") ---
@@ -859,46 +637,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     showFeedback('تم حفظ وتحديث بيانات الكورس بنجاح ✅');
   };
 
-  // --- Wallet Recharge Codes & Student Direct Balance Handlers ---
-  const handleGenerateWalletCodes = (customCount?: number, customAmount?: number) => {
-    const count = customCount || Math.max(1, Math.min(100, Number(walletCodeCount) || 5));
-    const amount = customAmount || Math.max(1, Number(walletCodeAmount) || 100);
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    const generated: WalletRechargeCode[] = [];
-    const nowStr = new Date().toLocaleDateString('ar-EG', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
-
-    for (let i = 0; i < count; i++) {
-      let randPart = '';
-      for (let j = 0; j < 8; j++) {
-        randPart += chars.charAt(Math.floor(Math.random() * chars.length));
-      }
-      const formattedCode = `WLT-${amount}-${randPart.slice(0, 4)}-${randPart.slice(4, 8)}`;
-      generated.push({
-        code: formattedCode,
-        amount,
-        isUsed: false,
-        createdAt: nowStr,
-        notes: walletCodeNote.trim() || `كارت شحن محفظة بقيمة ${amount} ج.م`,
-      });
-    }
-
-    const updated = [...generated, ...walletCodes];
-    setWalletCodes(updated);
-    saveWalletCodes(updated);
-    showFeedback(`تم توليد ${count} كود شحن محفظة بقيمة ${amount} ج.م لكل كود بنجاح! 💰`);
-  };
-
-  const handleDeleteWalletCode = (codeToDelete: string) => {
-    const updated = walletCodes.filter((c) => c.code !== codeToDelete);
-    setWalletCodes(updated);
-    saveWalletCodes(updated);
-    showFeedback('تم حذف كود شحن المحفظة بنجاح.');
-  };
-
+  // --- Student Direct Balance Handler ---
   const handleDirectAdjustStudentWallet = async (
     student: User,
     amountValue: number,
@@ -948,16 +687,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     saveUsers(updatedList);
     await saveSingleUserToServer(updatedStudent);
 
-    fetch('/api/wallet/admin-adjust', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        studentId: student.id,
-        studentPhone: student.phone,
-        mode,
-        amount: numAmount,
-      }),
-    }).catch(() => {});
+    getClientAuthHeaders({ 'Content-Type': 'application/json' })
+      .then((headers) =>
+        fetch('/api/wallet/admin-adjust', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            studentId: student.id,
+            studentPhone: student.phone,
+            mode,
+            amount: numAmount,
+          }),
+        })
+      )
+      .catch(() => {});
 
     showFeedback(
       `تم تحديث رصيد محفظة الطالب (${student.name}) ليصبح ${newBalance} ج.م بنجاح! 💰✅`
@@ -974,7 +717,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     });
     onUpdateStudents(updated);
     saveUsers(updated);
-    await updateUserStatusInFirestore(studentId, 'active');
+    await setDoc(doc(db, 'users', studentId), { status: 'active', updatedAt: new Date().toISOString() }, { merge: true }).catch(() => {});
     showFeedback(`تم قبول واعتماد حساب الطالب (${studentName}) بنجاح! تم تفعيل الحساب في Firebase وسيتوجه الطالب فوراً إلى لوحة التحكم.`);
     if (selectedStudentForModal && selectedStudentForModal.id === studentId) {
       setSelectedStudentForModal({ ...selectedStudentForModal, status: 'active' });
@@ -990,7 +733,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     });
     onUpdateStudents(updated);
     saveUsers(updated);
-    await updateUserStatusInFirestore(studentId, 'rejected');
+    await setDoc(doc(db, 'users', studentId), { status: 'rejected', updatedAt: new Date().toISOString() }, { merge: true }).catch(() => {});
     showFeedback(`تم رفض طلب حساب الطالب (${studentName}). سيظهر له تنبيه بإنشاء حساب جديد والتأكد من صحة المعلومات.`, 'error');
     if (selectedStudentForModal && selectedStudentForModal.id === studentId) {
       setSelectedStudentForModal({ ...selectedStudentForModal, status: 'rejected' });
@@ -1006,7 +749,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     });
     onUpdateStudents(updated);
     saveUsers(updated);
-    await updateUserStatusInFirestore(studentId, 'pending');
+    await setDoc(doc(db, 'users', studentId), { status: 'pending', updatedAt: new Date().toISOString() }, { merge: true }).catch(() => {});
     showFeedback(`تمت إعادة حساب الطالب (${studentName}) إلى حالة قيد المراجعة في Firebase.`);
     if (selectedStudentForModal && selectedStudentForModal.id === studentId) {
       setSelectedStudentForModal({ ...selectedStudentForModal, status: 'pending' });
@@ -1092,9 +835,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
 
     try {
+      const resetHeaders = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
       await fetch('/api/admin/reset-student-device', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: resetHeaders,
         body: JSON.stringify({ studentId }),
       });
       await setDoc(doc(db, 'users', studentId), {
@@ -1137,7 +881,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     e.preventDefault();
     if (!newCourseTitle.trim()) return;
 
-    const targetTeacher = teachers.find((t) => t.id === newCourseTeacherId);
     const finalNewDivision = isPrimaryOrPrepGrade(newCourseYear) ? '' : newCourseDivision;
     const newCourse: Course = {
       id: `course-${Date.now()}`,
@@ -1152,9 +895,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       paymentPhone: newCoursePaymentPhone.trim() || undefined,
       paymentQrCode: newCoursePaymentQrCode || undefined,
       description: newCourseDesc || 'كورس تعليمي شامل ومنهجي مع بنك امتحانات تسلسلي واشتراك بالكود المعتمد.',
-      instructor: targetTeacher ? targetTeacher.name : (newCourseInstructor || 'إدارة المنصة'),
-      instructorId: targetTeacher ? targetTeacher.id : undefined,
-      teacherName: targetTeacher ? targetTeacher.name : undefined,
+      instructor: 'أ/ سوزان كريم فهمي',
+      instructorId: 'teacher-1791139743075',
+      teacherName: 'أ/ سوزان كريم فهمي',
       courseType: newCourseType,
       isLocked: true, // المغلق افتراضياً ويتطلب كود
       isPublished: true,
@@ -1171,7 +914,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setNewCourseDesc('');
     setNewCoursePaymentPhone('');
     setNewCoursePaymentQrCode('');
-    setNewCourseTeacherId('');
     showFeedback(`تم إنشاء كورس (${newCourse.title}) بنجاح وحفظه في المنصة!`);
   };
 
@@ -1206,7 +948,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const handleRemoveQuestionDraft = (qId: string) => {
     if (questionsDraft.length <= 1) {
-      alert('يجب أن يحتوي الامتحان على سؤال واحد على الأقل.');
+      showFeedback('يجب أن يحتوي الامتحان على سؤال واحد على الأقل.', 'error');
       return;
     }
     setQuestionsDraft(questionsDraft.filter((q) => q.id !== qId));
@@ -1214,11 +956,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const handleSaveManualExam = () => {
     if (!selectedCourseForExam) {
-      alert('الرجاء اختيار الكورس المراد إضافة الامتحان إليه.');
+      showFeedback('الرجاء اختيار الكورس المراد إضافة الامتحان إليه.', 'error');
       return;
     }
     if (!manualExamLesson.trim()) {
-      alert('الرجاء إدخال اسم الدرس أو موضوع الامتحان.');
+      showFeedback('الرجاء إدخال اسم الدرس أو موضوع الامتحان.', 'error');
       return;
     }
 
@@ -1289,179 +1031,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     ]);
   };
 
-  // --- Access Code Actions ---
-  const handleGenerateCodes = (countToGen?: number) => {
-    const count = Math.max(1, countToGen !== undefined ? countToGen : (codeCount || 1));
-
-    let targetCourseTitle = 'كافة كورسات المنصة';
-    let targetCourseId = '';
-    let teacherName = codeTeacherName.trim() || platformSettings.supervisorName || 'إدارة المنصة';
-
-    if (codeSelectedCourse === 'custom') {
-      targetCourseTitle = codeCustomCourseTitle.trim() || 'كورس مخصص';
-      targetCourseId = 'custom-' + Date.now();
-    } else if (codeSelectedCourse && codeSelectedCourse !== 'general') {
-      const found = courses.find((c) => c.id === codeSelectedCourse);
-      if (found) {
-        targetCourseId = found.id;
-        targetCourseTitle = found.title;
-        if (!codeTeacherName.trim() && found.instructor) {
-          teacherName = found.instructor;
-        }
-      }
-    }
-
-    const newCodes: CourseAccessCode[] = [];
-    const cleanPrefix = targetCourseTitle
-      .replace(/[^\u0621-\u064Aa-zA-Z0-9]/g, '')
-      .substring(0, 4)
-      .toUpperCase() || 'QALB';
-
-    for (let i = 0; i < count; i++) {
-      const randHex = Math.random().toString(36).substring(2, 6).toUpperCase();
-      const randNum = Math.floor(1000 + Math.random() * 9000);
-      const codeStr = `QALB-${cleanPrefix}-${randHex}-${randNum}`;
-
-      newCodes.push({
-        code: codeStr,
-        courseId: targetCourseId,
-        courseTitle: targetCourseTitle,
-        teacherName: teacherName,
-        isUsed: false,
-        createdAt: new Date().toISOString().split('T')[0],
-      });
-    }
-
-    const updated = [...newCodes, ...accessCodes];
-    setAccessCodes(updated);
-    saveAccessCodes(updated);
-    setAccessCodesDisplayMode('cards');
-    showFeedback(`تم توليد ${count} كارت اشتراك معتمد لكورس (${targetCourseTitle}) بنجاح!`);
-  };
-
-  const handleCopyCode = (code: string) => {
-    navigator.clipboard.writeText(code);
-    setCopiedCode(code);
-    setTimeout(() => setCopiedCode(null), 2000);
-  };
-
-  const handleDeleteCode = (codeStr: string) => {
-    const updated = accessCodes.filter((c) => c.code !== codeStr);
-    setAccessCodes(updated);
-    saveAccessCodes(updated);
-    showFeedback('تم حذف الكود.', 'error');
-  };
-
-  // --- Essay Review Actions ---
-  const handleOpenReviewModal = (sub: StudentExamSubmission) => {
-    setSelectedSubmissionForReview(sub);
-    // Prefill inputs
-    const initialMarks: Record<string, number> = {};
-    const initialNotes: Record<string, string> = {};
-    const initialImages: Record<string, string> = {};
-
-    if (sub.essayGrades) {
-      Object.entries(sub.essayGrades).forEach(([qId, grade]) => {
-        initialMarks[qId] = grade.awardedMarks || 0;
-        initialNotes[qId] = grade.feedback || '';
-        initialImages[qId] = grade.modelAnswerImage || '';
-      });
-    }
-    setReviewMarksInput(initialMarks);
-    setReviewNotesInput(initialNotes);
-    setReviewModelImagesInput(initialImages);
-  };
-
-  const handleFinalizeEssayGrading = () => {
-    if (!selectedSubmissionForReview) return;
-
-    let updatedTotalScore = 0;
-    // Calculate MCQ portion
-    Object.entries(selectedSubmissionForReview.mcqAnswers).forEach(([qId, ansIdx]) => {
-      // Find mark from courses
-      let qMarks = 10;
-      courses.forEach((c) => {
-        c.exams.forEach((ex) => {
-          const q = ex.questions.find((qq) => qq.id === qId);
-          if (q && q.correctOptionIndex === ansIdx) {
-            updatedTotalScore += q.marks;
-          }
-        });
-      });
-    });
-
-    // Add essay marks
-    const essayGradesRecord: Record<string, any> = {};
-    Object.entries(reviewMarksInput).forEach(([qId, awarded]) => {
-      const awardedNum = Number(awarded) || 0;
-      updatedTotalScore += awardedNum;
-      essayGradesRecord[qId] = {
-        questionId: qId,
-        awardedMarks: awardedNum,
-        maxMarks: 20,
-        feedback: reviewNotesInput[qId] || 'تم التدقيق والاعتماد من قِبل إدارة المنصة.',
-        strengths: ['إجابة منهجية ممتازة'],
-        missingPoints: [],
-        improvementTip: 'استمر على هذا المستوى.',
-        modelAnswerImage: reviewModelImagesInput[qId] || '',
-      };
-    });
-
-    const maxSc = selectedSubmissionForReview.maxScore || 100;
-    const finalPercentage = Math.round((updatedTotalScore / maxSc) * 100);
-    const isPassed = finalPercentage >= 60;
-
-    const updatedSub: StudentExamSubmission = {
-      ...selectedSubmissionForReview,
-      status: 'graded',
-      totalScore: updatedTotalScore,
-      percentage: finalPercentage,
-      passed: isPassed,
-      essayGrades: essayGradesRecord,
-      reviewedAt: new Date().toLocaleDateString('ar-EG'),
-      reviewedBy: 'إدارة المنصة',
-    };
-
-    // Update in submissions list
-    const updatedSubsList = submissions.map((s) =>
-      s.submissionId === updatedSub.submissionId || (s.examId === updatedSub.examId && s.studentId === updatedSub.studentId)
-        ? updatedSub
-        : s
-    );
-    setSubmissions(updatedSubsList);
-    saveSubmissions(updatedSubsList);
-
-    // Update in student user object if found
-    if (updatedSub.studentId) {
-      const updatedStudentsList = students.map((st) => {
-        if (st.id === updatedSub.studentId) {
-          const currentResults = st.examResults || {};
-          return {
-            ...st,
-            examResults: {
-              ...currentResults,
-              [updatedSub.examId]: {
-                ...(currentResults[updatedSub.examId] || {}),
-                score: updatedTotalScore,
-                maxScore: maxSc,
-                percentage: finalPercentage,
-                passed: isPassed,
-                status: 'graded' as const,
-                completedAt: new Date().toISOString().split('T')[0],
-              },
-            },
-          };
-        }
-        return st;
-      });
-      onUpdateStudents(updatedStudentsList);
-      saveUsers(updatedStudentsList);
-    }
-
-    showFeedback(`تم اعتماد تصحيح امتحان الطالب (${selectedSubmissionForReview.studentName}) ونشر الإجابة النموذجية بنجاح!`);
-    setSelectedSubmissionForReview(null);
-  };
-
   // --- Competition Actions ---
   const handleCreateCompetition = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1479,28 +1048,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       createdAt: new Date().toISOString().split('T')[0],
       participantsCount: 0,
       leaderboard: [],
-      questions: [
-        {
-          id: `cq-${Date.now()}-1`,
-          type: 'mcq',
-          questionText: 'سؤال التميز الأول في المسابقة:',
-          marks: 20,
-          options: ['الخيار الصحيح (أ)', 'الخيار (ب)', 'الخيار (ج)', 'الخيار (د)'],
-          correctOptionIndex: 0,
-          modelAnswer: 'الخيار الصحيح هو (أ) وفق القواعد المعتمدة.',
-          bookReference: 'منهاج الثانوية العامة',
-        },
-        {
-          id: `cq-${Date.now()}-2`,
-          type: 'mcq',
-          questionText: 'سؤال التميز الثاني لقياس سرعة البديهة والربط المنطقي:',
-          marks: 20,
-          options: ['خيار تجريبي 1', 'الخيار المعتمد الصحيح', 'خيار تجريبي 3', 'خيار تجريبي 4'],
-          correctOptionIndex: 1,
-          modelAnswer: 'الإجابة النموذجية هي (ب) بالبرهان الرياضي.',
-          bookReference: 'منهاج الثانوية العامة',
-        },
-      ],
+      questions: [],
     };
 
     const updated = [newComp, ...competitions];
@@ -1573,8 +1121,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 rounded-full bg-white flex items-center justify-center shadow-lg shadow-indigo-500/30 border border-indigo-400/50 overflow-hidden shrink-0">
               <img
-                src={qalbAlElmLogo}
-                alt="شعار منصة قلب العلم"
+                src={motafalsifaLogo}
+                alt="شعار منصة المتفلسفة "
                 referrerPolicy="no-referrer"
                 className="w-full h-full object-cover"
               />
@@ -1587,12 +1135,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </span>
               </div>
               <p className="text-xs sm:text-sm text-slate-300">
-                منصة قلب العلم • المشرف العام: <b>{platformSettings.supervisorName}</b> • متابعة الطلاب، الكورسات، والامتحانات
+                منصة المتفلسفة  • المشرف العام: <b>{platformSettings.supervisorName}</b> • متابعة الطلاب، الكورسات، والامتحانات
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            {/* Dedicated Weekly Course Sales & Revenue Button */}
+            <button
+              type="button"
+              onClick={() => openSectionFullPage('weekly_sales')}
+              className="px-5 py-3 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs transition-all shadow-lg shadow-emerald-500/25 flex items-center gap-2 cursor-pointer border-2 border-emerald-300"
+              title="عرض عدد الكورسات المباعة للطلاب والأموال الداخلة كل أسبوع بأسبوعه"
+            >
+              <BarChart3 className="w-4 h-4 text-slate-950" />
+              <span>مبيعات الكورسات والأرباح (أسبوع بأسبوع) 💰</span>
+            </button>
+
             {onOpenHomeVisualEditor && (
               <button
                 onClick={onOpenHomeVisualEditor}
@@ -1604,20 +1163,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </button>
             )}
 
-            <button
-              onClick={() => openSectionFullPage('coupons')}
-              className="px-5 py-3 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs transition-all shadow-lg shadow-rose-600/20 flex items-center gap-2 cursor-pointer"
-            >
-              <Percent className="w-4 h-4 text-white" />
-              <span>توليد كوبونات الخصم 🏷️</span>
-            </button>
+            {onOpenThemeCustomizer && (
+              <button
+                type="button"
+                onClick={onOpenThemeCustomizer}
+                className="px-5 py-3 rounded-2xl bg-gradient-to-r from-amber-400 via-orange-500 to-amber-500 hover:from-amber-500 hover:to-orange-600 text-slate-950 font-black text-xs transition-all shadow-lg shadow-amber-500/25 flex items-center gap-2 cursor-pointer"
+                title="تعديل ألوان المنصة وصفحات تسجيل الدخول وإنشاء الحساب"
+              >
+                <Palette className="w-4 h-4 text-slate-950" />
+                <span>تعديل الألوان والصفحات 🎨</span>
+              </button>
+            )}
 
             <button
-              onClick={handleOpenAddTeacher}
+              onClick={() => openSectionFullPage('support_chat')}
               className="px-5 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs transition-all shadow-lg shadow-indigo-600/20 flex items-center gap-2 cursor-pointer"
             >
-              <UserPlus className="w-4 h-4 text-white" />
-              <span>إضافة مدرس جديد 👨‍🏫</span>
+              <MessageSquare className="w-4 h-4 text-amber-300" />
+              <span>رسائل الدعم الفني للطلاب 💬</span>
             </button>
 
             <button
@@ -1627,16 +1190,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <Bell className="w-4 h-4 text-slate-950" />
               <span>إرسال إشعار للأجهزة 📢</span>
             </button>
-
-            <a
-              href="/api/template-export/mohamed-saber-platform.zip"
-              download="mohamed-saber-physics-platform.zip"
-              className="px-5 py-3 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-black text-xs transition-all shadow-lg shadow-cyan-500/25 flex items-center gap-2 cursor-pointer"
-              title="تحميل النسخة الكاملة المستقلة لمنصة مستر محمد صابر (مادة الفيزياء - مدرس واحد) بصيغة ZIP"
-            >
-              <Download className="w-4 h-4 text-white" />
-              <span>تحميل نسخة مستر محمد صابر (فيزياء ⚡) ZIP</span>
-            </a>
 
             {!isAdmin && (
               <button
@@ -1721,6 +1274,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </button>
           )}
 
+          {onOpenThemeCustomizer && (
+            <button
+              type="button"
+              onClick={onOpenThemeCustomizer}
+              className="py-3 px-3 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-1.5 bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 shadow-md shadow-amber-500/20 hover:brightness-110 cursor-pointer"
+            >
+              <Palette className="w-4 h-4 text-slate-950" />
+              <span>الألوان والصفحات 🎨</span>
+            </button>
+          )}
+
           <button
             onClick={() => openSectionFullPage('analytics')}
             className={`py-3 px-2.5 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
@@ -1762,15 +1326,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </button>
 
           <button
-            onClick={() => openSectionFullPage('teachers')}
+            onClick={() => openSectionFullPage('weekly_sales')}
             className={`py-3 px-2.5 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-              activeTab === 'teachers'
-                ? 'bg-white text-slate-950 shadow-md'
-                : 'bg-slate-800/80 text-amber-400 hover:bg-slate-800'
+              activeTab === 'weekly_sales'
+                ? 'bg-emerald-400 text-slate-950 shadow-lg shadow-emerald-400/25 font-black'
+                : 'bg-slate-800/80 text-emerald-300 hover:bg-slate-800'
             }`}
           >
-            <UserPlus className="w-4 h-4 text-amber-400" />
-            <span>المعلمون ({teachers.length})</span>
+            <BarChart3 className="w-4 h-4" />
+            <span>مبيعات الكورسات 💰</span>
           </button>
 
           <button
@@ -1795,54 +1359,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           >
             <FileEdit className="w-4 h-4 text-amber-400" />
             <span>منشئ الامتحانات اليدوي</span>
-          </button>
-
-          <button
-            onClick={() => openSectionFullPage('essay_reviews')}
-            className={`py-3 px-3 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-              activeTab === 'essay_reviews'
-                ? 'bg-white text-slate-950 shadow-md'
-                : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800'
-            }`}
-          >
-            <CheckSquare className="w-4 h-4 text-sky-400" />
-            <span>تصحيح المقالي</span>
-          </button>
-
-          <button
-            onClick={() => openSectionFullPage('access_codes')}
-            className={`py-3 px-3 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-              activeTab === 'access_codes'
-                ? 'bg-white text-slate-950 shadow-md'
-                : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800'
-            }`}
-          >
-            <Key className="w-4 h-4 text-violet-400" />
-            <span>أكواد الكورسات</span>
-          </button>
-
-          <button
-            onClick={() => openSectionFullPage('coupons')}
-            className={`py-3 px-3 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-              activeTab === 'coupons'
-                ? 'bg-rose-600 text-white shadow-md font-black'
-                : 'bg-slate-800/80 text-rose-300 hover:bg-slate-800'
-            }`}
-          >
-            <Percent className="w-4 h-4 text-rose-400" />
-            <span>توليد كوبونات الخصم 🏷️</span>
-          </button>
-
-          <button
-            onClick={() => openSectionFullPage('fawaterak')}
-            className={`py-3 px-3 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-              activeTab === 'fawaterak'
-                ? 'bg-amber-400 text-slate-950 shadow-md font-black'
-                : 'bg-slate-800/80 text-amber-300 hover:bg-slate-800'
-            }`}
-          >
-            <Smartphone className="w-4 h-4" />
-            <span>بوابة فودافون كاش (SMS) 📱</span>
           </button>
 
           <button
@@ -1891,7 +1407,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             }`}
           >
             <Mail className="w-4 h-4 text-indigo-400" />
-            <span>بريد الاسترداد (qalbalelm@gmail.com)</span>
+            <span>بريد الاسترداد (almtflsft@gmail.com)</span>
           </button>
 
           <button
@@ -1916,17 +1432,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <span className="font-black text-xs sm:text-sm">
               وضع الصفحة الكاملة: {
                 activeTab === 'analytics' ? 'الإحصائيات والتحليلات 📊' :
+                activeTab === 'weekly_sales' ? 'مبيعات الكورسات والأرباح أسبوع بأسبوع 💰' :
                 activeTab === 'notifications' ? 'بث الإشعارات الفورية 📢' :
                 activeTab === 'students' ? 'إدارة الطلاب والحسابات 👨‍🎓' :
-                activeTab === 'teachers' ? 'إدارة المعلمين والأساتذة 👨‍🏫' :
                 activeTab === 'courses' ? 'إدارة الكورسات والدروس 📚' :
                 activeTab === 'manual_exam' ? 'منشئ الامتحانات اليدوي 📝' :
-                activeTab === 'essay_reviews' ? 'تصحيح الأسئلة المقالية ✍️' :
-                activeTab === 'access_codes' ? 'توليد أكواد وكروت الكورسات 🔑' :
-                activeTab === 'coupons' ? 'توليد وإدارة كوبونات الخصم 🏷️' :
-                activeTab === 'fawaterak' ? 'بوابة فودافون كاش (SMS) 📱' :
                 activeTab === 'competitions' ? 'إدارة المسابقات الكبرى 🏆' :
-                activeTab === 'whatsapp' ? 'إدارة البريد الرسمي لاسترداد كلمة السر (qalbalelm@gmail.com) 📧' :
+                activeTab === 'whatsapp' ? 'إدارة البريد الرسمي لاسترداد كلمة السر (almtflsft@gmail.com) 📧' :
                 activeTab === 'support_chat' ? 'رسائل الدعم الفني المباشر مع الطلاب 💬' :
                 'إعدادات وهوية المنصة ⚙️'
               }
@@ -2877,7 +2389,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                   };
                                   setSelectedStudentForModal(updatedStudent);
                                   saveStudentEnrolledCourses(selectedStudentForModal.id, updatedIds);
-                                  await updateUserEnrolledCoursesInFirestore(selectedStudentForModal.id, updatedIds);
+                                  await setDoc(doc(db, 'users', selectedStudentForModal.id), { enrolledCourseIds: updatedIds, updatedAt: new Date().toISOString() }, { merge: true }).catch(() => {});
                                   const updatedList = students.map((s) =>
                                     s.id === selectedStudentForModal.id ? updatedStudent : s
                                   );
@@ -2933,7 +2445,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           };
                           setSelectedStudentForModal(updatedStudent);
                           saveStudentEnrolledCourses(selectedStudentForModal.id, updatedIds);
-                          await updateUserEnrolledCoursesInFirestore(selectedStudentForModal.id, updatedIds);
+                          await setDoc(doc(db, 'users', selectedStudentForModal.id), { enrolledCourseIds: updatedIds, updatedAt: new Date().toISOString() }, { merge: true }).catch(() => {});
                           const updatedList = students.map((s) =>
                             s.id === selectedStudentForModal.id ? updatedStudent : s
                           );
@@ -3068,751 +2580,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* TAB: TEACHERS MANAGEMENT */}
-      {/* ========================================================================= */}
-      {activeTab === 'teachers' && (
-        <div className="space-y-6">
-          <div className="bg-white border border-slate-200 rounded-[32px] p-6 sm:p-8 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
-                <UserPlus className="w-5 h-5 text-indigo-600" />
-                <span>إدارة المعلمين والأساتذة المعتمدين</span>
-              </h3>
-              <p className="text-xs text-slate-500">
-                إضافة المدرسين بالاسم والصورة والمادة والتخصص، وتعيين رقم حساب وكلمة سر خاصة للرفع والإدارة
-              </p>
-            </div>
-
-            <button
-              onClick={handleOpenAddTeacher}
-              className="px-5 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs transition-all shadow-md shadow-indigo-200 flex items-center gap-2 shrink-0 cursor-pointer"
-            >
-              <UserPlus className="w-4 h-4" />
-              <span>إضافة مدرس جديد 👨‍🏫</span>
-            </button>
-          </div>
-
-          {/* Teachers Cards Grid */}
-          {teachers.length === 0 ? (
-            <div className="bg-white border border-slate-200 rounded-[32px] p-12 text-center space-y-4">
-              <div className="w-16 h-16 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto text-2xl font-black">
-                👨‍🏫
-              </div>
-              <div className="space-y-1">
-                <h4 className="text-base font-black text-slate-900">لا يوجد مدرسون مضافون حالياً</h4>
-                <p className="text-xs text-slate-500 max-w-md mx-auto">
-                  قم بإضافة معلم بالاسم والصورة والمادة والتخصص، وتعيين رقم حساب وكلمة سر له ليتمكن من رفع كورساته الخاصة.
-                </p>
-              </div>
-              <button
-                onClick={handleOpenAddTeacher}
-                className="px-6 py-2.5 rounded-2xl bg-indigo-600 text-white font-black text-xs hover:bg-indigo-700 transition-all shadow-sm"
-              >
-                إضافة أول معلم الآن
-              </button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {teachers.map((teacher) => {
-                const teacherCourses = courses.filter(
-                  (c) => c.instructorId === teacher.id || c.instructor === teacher.name
-                );
-                const isPasswordVisible = !!showPasswordMap[teacher.id];
-
-                return (
-                  <div
-                    key={teacher.id}
-                    className="bg-white border border-slate-200 rounded-[28px] overflow-hidden shadow-xs p-5 flex flex-col justify-between space-y-4 transition-all hover:shadow-md"
-                  >
-                    <div className="space-y-3">
-                      {/* Teacher Header Card */}
-                      <div className="flex items-center gap-3">
-                        <div className="relative w-14 h-14 rounded-2xl overflow-hidden bg-slate-100 border border-slate-200 shrink-0">
-                          <img
-                            src={teacher.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=400&auto=format&fit=crop'}
-                            alt={teacher.name}
-                            className="w-full h-full object-cover"
-                            referrerPolicy="no-referrer"
-                          />
-                          <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white" />
-                        </div>
-
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <h4 className="text-base font-black text-slate-900 truncate">{teacher.name}</h4>
-                            <span
-                              className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
-                                teacher.gender === 'أنثى'
-                                  ? 'bg-pink-100 text-pink-700 border border-pink-200'
-                                  : 'bg-indigo-100 text-indigo-700 border border-indigo-200'
-                              }`}
-                            >
-                              {teacher.gender === 'أنثى' ? '👩‍🏫 معلمة معتمدة' : '👨‍🏫 معلم معتمد'}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2 mt-1 flex-wrap">
-                            <span className="text-xs font-bold text-slate-600 bg-slate-100 px-2.5 py-0.5 rounded-lg">
-                              📚 {teacher.subject || 'غير محدد'}
-                            </span>
-                            <span className="text-[11px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200">
-                              🎯 {teacher.specialty || 'عام'}
-                            </span>
-                            {teacher.schoolYear && (
-                              <span className="text-[11px] font-bold text-purple-800 bg-purple-50 px-2 py-0.5 rounded-lg border border-purple-200">
-                                🎓 {teacher.schoolYear}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Credentials Box */}
-                      <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2 text-xs">
-                        <div className="flex items-center justify-between">
-                          <span className="text-slate-500 font-bold">رقم الحساب / الدخول:</span>
-                          <div className="flex items-center gap-1">
-                            <span className="font-mono font-black text-slate-900 bg-white px-2 py-0.5 rounded-md border border-slate-200" dir="ltr">
-                              {teacher.accountNumber || teacher.phone}
-                            </span>
-                            <button
-                              onClick={() => {
-                                navigator.clipboard.writeText(teacher.accountNumber || teacher.phone);
-                                showFeedback('تم نسخ رقم الحساب');
-                              }}
-                              className="p-1 hover:text-indigo-600 text-slate-400"
-                              title="نسخ رقم الحساب"
-                            >
-                              <Copy className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center justify-between">
-                          <span className="text-slate-500 font-bold">أمان الحساب:</span>
-                          <span className="font-sans text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                            مشفر ومحمي عبر Firebase Auth
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Courses Summary */}
-                      <div className="p-3 rounded-2xl bg-emerald-50/70 border border-emerald-100 text-xs flex items-center justify-between">
-                        <span className="text-emerald-800 font-bold">الكورسات المرفوعة:</span>
-                        <span className="font-black text-emerald-900 bg-white px-2 py-0.5 rounded-lg border border-emerald-200">
-                          {teacherCourses.length} كورس
-                        </span>
-                      </div>
-
-                      {teacherCourses.length > 0 && (
-                        <div className="flex flex-wrap gap-1 pt-1">
-                          {teacherCourses.map((c) => (
-                            <span
-                              key={c.id}
-                              className="text-[10px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md truncate max-w-[140px]"
-                              title={c.title}
-                            >
-                              {c.title}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Teaching Assistants Summary Box on Teacher Card */}
-                      {(() => {
-                        const teacherAssistants = students.filter(
-                          (u) =>
-                            (u.role === 'assistant' || u.isAssistant) &&
-                            (u.assistantForTeacherId === teacher.id ||
-                              u.assistantForTeacherName === teacher.name)
-                        );
-                        return (
-                          <div className="p-3 rounded-2xl bg-purple-50/80 border border-purple-200/80 space-y-2 text-xs">
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-purple-900 font-black flex items-center gap-1.5">
-                                <Users className="w-3.5 h-3.5 text-purple-600" />
-                                <span>المدرسون المساعدون:</span>
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => setManagingAssistantsTeacher(teacher)}
-                                className="px-2.5 py-1 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-black text-[11px] flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
-                              >
-                                <UserPlus className="w-3 h-3" />
-                                <span>إضافة / إدارة المساعدين ({teacherAssistants.length})</span>
-                              </button>
-                            </div>
-                            {teacherAssistants.length > 0 && (
-                              <div className="flex flex-wrap gap-1.5 pt-1">
-                                {teacherAssistants.map((ast) => {
-                                  const meta = getAssistantSpecialtyMeta(ast.assistantSpecialty);
-                                  return (
-                                    <span
-                                      key={ast.id}
-                                      onClick={() => setManagingAssistantsTeacher(teacher)}
-                                      className={`text-[10px] font-black px-2 py-0.5 rounded-lg border cursor-pointer ${meta.badgeColor}`}
-                                      title={`رقم الدخول: ${ast.accountNumber || ast.phone} | التخصص: ${meta.label}`}
-                                    >
-                                      {ast.name} ({meta.shortLabel})
-                                    </span>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })()}
-                    </div>
-
-                    {/* Card Actions */}
-                    <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setNewCourseTeacherId(teacher.id);
-                            if (teacher.subject) setNewCourseSubject(teacher.subject);
-                            if (teacher.schoolYear) setNewCourseYear(teacher.schoolYear as SchoolYearGrade);
-                            setNewCourseTitle(`كورس ${teacher.subject || 'المادة'} - ${teacher.name}`);
-                            setIsAddCourseModalOpen(true);
-                          }}
-                          className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs transition-all flex items-center gap-1 shadow-xs cursor-pointer"
-                          title="إضافة كورس تعليمي مخصص لهذا المعلم"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                          <span>+ إضافة كورس</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setManagingAssistantsTeacher(teacher)}
-                          className="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-black text-xs transition-all flex items-center gap-1 shadow-xs cursor-pointer"
-                          title="إضافة وتحديد تخصص المدرسين المساعدين لهذا المدرس"
-                        >
-                          <UserPlus className="w-3.5 h-3.5" />
-                          <span>+ مدرس مساعد</span>
-                        </button>
-
-                        {onSelectTeacher && (
-                          <button
-                            type="button"
-                            onClick={() => onSelectTeacher(teacher)}
-                            className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-black text-xs transition-all flex items-center gap-1 cursor-pointer"
-                            title="تجربة الدخول بحساب هذا المعلم"
-                          >
-                            <span>لوحة المعلم ↗</span>
-                          </button>
-                        )}
-
-                        {onViewTeacherProfile && (
-                          <button
-                            type="button"
-                            onClick={() => onViewTeacherProfile(teacher)}
-                            className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-black text-xs transition-all flex items-center gap-1 cursor-pointer"
-                            title="عرض صفحة المعلم والكورسات الخاصة به"
-                          >
-                            <ExternalLink className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>عرض صفحته 👁️</span>
-                          </button>
-                        )}
-
-                        <button
-                          type="button"
-                          onClick={() => handleOpenEditTeacher(teacher)}
-                          className="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 font-black text-xs transition-all flex items-center gap-1 cursor-pointer"
-                          title="تعديل بيانات المعلم"
-                        >
-                          <Edit className="w-3.5 h-3.5 text-amber-600" />
-                          <span>تعديل ✏️</span>
-                        </button>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteTeacher(teacher.id, teacher.name)}
-                        className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white border border-rose-200 hover:border-rose-600 font-black text-xs transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                        title="حذف حساب المعلم نهائياً"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>حذف المدرس 🗑️</span>
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Teacher Assistants Management Modal */}
-          {managingAssistantsTeacher && (
-            <TeacherAssistantsModal
-              isOpen={Boolean(managingAssistantsTeacher)}
-              teacher={managingAssistantsTeacher}
-              allUsers={students}
-              onUpdateUsers={onUpdateStudents}
-              onClose={() => setManagingAssistantsTeacher(null)}
-            />
-          )}
-
-          {/* Teacher Delete Confirmation Modal */}
-          {teacherToDelete && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
-              <div className="bg-white border border-slate-200 rounded-[28px] w-full max-w-md shadow-2xl p-6 space-y-5 text-right">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
-                    <Trash2 className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h4 className="text-base font-black text-slate-900">تأكيد حذف حساب المدرس</h4>
-                    <p className="text-xs text-slate-500">سيتم إزالة الحساب من المنصة ومن سحابة Firebase نهائياً</p>
-                  </div>
-                </div>
-
-                <div className="p-3.5 rounded-2xl bg-rose-50/70 border border-rose-200 text-xs space-y-1">
-                  <span className="font-bold text-rose-900 block">هل أنت متأكد من حذف حساب المعلم:</span>
-                  <span className="text-sm font-black text-rose-700 block">{teacherToDelete.name}</span>
-                </div>
-
-                <label className="flex items-center gap-2.5 p-3 rounded-2xl bg-slate-50 border border-slate-200 cursor-pointer text-xs font-bold text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={deleteTeacherCoursesToo}
-                    onChange={(e) => setDeleteTeacherCoursesToo(e.target.checked)}
-                    className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500"
-                  />
-                  <span>حذف جميع الكورسات المرتبطة بهذا المدرس أيضاً</span>
-                </label>
-
-                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => setTeacherToDelete(null)}
-                    className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-black text-xs cursor-pointer"
-                  >
-                    إلغاء
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => confirmDeleteTeacherNow(teacherToDelete.id, teacherToDelete.name, deleteTeacherCoursesToo)}
-                    className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs flex items-center gap-1.5 shadow-md shadow-rose-200 cursor-pointer"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    <span>تأكيد الحذف النهائي 🗑️</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Teacher Add/Edit Full Page View */}
-          {isTeacherModalOpen && (
-            <div className="fixed inset-0 z-50 bg-slate-50 dark:bg-slate-950 overflow-y-auto animate-fadeIn p-4 sm:p-8">
-              <div className="bg-white border border-slate-200 rounded-[32px] w-full max-w-4xl mx-auto shadow-2xl p-6 sm:p-10 space-y-6">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                  <div className="flex items-center gap-2">
-                    <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-black">
-                      <UserPlus className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h3 className="text-base font-black text-slate-900">
-                        {editingTeacherId ? 'تعديل بيانات المعلم' : 'إضافة مدرس جديد وتعيين حسابه'}
-                      </h3>
-                      <p className="text-xs text-slate-400">
-                        يستطيع المعلم رفع كورساته الخاصة بمادته فقط بعد الدخول
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setIsTeacherModalOpen(false)}
-                    className="w-8 h-8 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 flex items-center justify-center"
-                  >
-                    ✕
-                  </button>
-                </div>
-
-                <form onSubmit={handleSaveTeacher} className="space-y-4 text-xs">
-                  {/* Gender Selection: معلم (ذكر) / معلمة (أنثى) */}
-                  <div className="space-y-1.5">
-                    <label className="font-black text-slate-700 block">تحديد النوع (معلم أو معلمة) *</label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setTeacherGender('ذكر');
-                          if (teacherAvatar === 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400&auto=format&fit=crop') {
-                            setTeacherAvatar('https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=400&auto=format&fit=crop');
-                          }
-                        }}
-                        className={`py-3 px-4 rounded-2xl border-2 font-black text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                          teacherGender === 'ذكر'
-                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-200'
-                            : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
-                        }`}
-                      >
-                        <span className="text-base">👨‍🏫</span>
-                        <span>معلم (ذكر)</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setTeacherGender('أنثى');
-                          if (
-                            teacherAvatar === 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=400&auto=format&fit=crop' ||
-                            teacherAvatar === 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=400&auto=format&fit=crop'
-                          ) {
-                            setTeacherAvatar('https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400&auto=format&fit=crop');
-                          }
-                        }}
-                        className={`py-3 px-4 rounded-2xl border-2 font-black text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                          teacherGender === 'أنثى'
-                            ? 'bg-pink-600 text-white border-pink-600 shadow-md shadow-pink-200'
-                            : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
-                        }`}
-                      >
-                        <span className="text-base">👩‍🏫</span>
-                        <span>معلمة (أنثى)</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Name */}
-                  <div className="space-y-1">
-                    <label className="font-black text-slate-700 block">
-                      {teacherGender === 'أنثى' ? 'اسم المعلمة الثلاثي أو الرباعي *' : 'اسم المدرس الثلاثي أو الرباعي *'}
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder={teacherGender === 'أنثى' ? 'مثال: أ. سارة محمود حسن' : 'مثال: أ. محمد أحمد إبراهيم'}
-                      value={teacherName}
-                      onChange={(e) => setTeacherName(e.target.value)}
-                      className="w-full px-4 py-3 rounded-xl border border-slate-200 text-slate-900 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                    />
-                  </div>
-
-                  {/* Personal Avatar Upload From Device */}
-                  <div className="space-y-2 p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
-                    <div className="flex items-center justify-between">
-                      <label className="font-black text-slate-800 block text-xs">
-                        الصورة الشخصية للمعلم (رفع من على جهازك) 📷 *
-                      </label>
-                      {teacherAvatar.startsWith('data:') && (
-                        <span className="text-[10px] font-black text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-md border border-emerald-200">
-                          ✓ تم رفع الصورة من جهازك بنجاح
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="flex flex-col sm:flex-row items-center gap-3">
-                      {/* Avatar preview */}
-                      <div className="relative w-16 h-16 rounded-2xl overflow-hidden bg-slate-200 border-2 border-indigo-200 shrink-0 shadow-xs flex items-center justify-center">
-                        {teacherAvatar ? (
-                          <img
-                            src={teacherAvatar}
-                            alt="Preview"
-                            className="w-full h-full object-cover"
-                            referrerPolicy="no-referrer"
-                          />
-                        ) : (
-                          <Users className="w-8 h-8 text-slate-400" />
-                        )}
-                        {teacherAvatar && (
-                          <button
-                            type="button"
-                            onClick={() => setTeacherAvatar('')}
-                            className="absolute top-1 right-1 w-4 h-4 rounded-full bg-rose-600 text-white text-[9px] flex items-center justify-center hover:bg-rose-700 shadow-xs"
-                            title="إزالة الصورة"
-                          >
-                            ✕
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Device Upload Button / Dropzone */}
-                      <div className="flex-1 w-full space-y-2">
-                        <label className="w-full border-2 border-dashed border-indigo-200 hover:border-indigo-500 rounded-xl p-2.5 flex items-center justify-center gap-2 cursor-pointer bg-white hover:bg-indigo-50/50 transition-all text-center">
-                          <Upload className="w-4 h-4 text-indigo-600 shrink-0" />
-                          <div className="text-right">
-                            <span className="text-xs font-black text-indigo-700 block">
-                              اضغط هنا لرفع صورة المعلم من جهازك 💻📱
-                            </span>
-                            <span className="text-[10px] text-slate-400 block">
-                              يدعم ملفات الصور (PNG, JPG, JPEG, WEBP)
-                            </span>
-                          </div>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            className="hidden"
-                            onChange={(e) =>
-                              handleImageUpload(e, (base64) => {
-                                setTeacherAvatar(base64);
-                                showFeedback('تم رفع وتعيين الصورة الشخصية للمعلم من الجهاز بنجاح 📷');
-                              })
-                            }
-                          />
-                        </label>
-
-                        {/* Direct URL or presets fallback */}
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="url"
-                            placeholder="أو ضع رابط صورة خارجي (URL)..."
-                            value={teacherAvatar.startsWith('data:') ? '' : teacherAvatar}
-                            onChange={(e) => setTeacherAvatar(e.target.value)}
-                            className="w-full px-3 py-1.5 rounded-xl border border-slate-200 text-slate-900 text-[11px] font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                            dir="ltr"
-                          />
-                        </div>
-
-                        <div className="flex items-center gap-1 flex-wrap">
-                          <span className="text-[10px] text-slate-400 font-bold">أو اختر صورة جاهزة:</span>
-                          {[
-                            { name: 'معلم 1', url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=400&auto=format&fit=crop' },
-                            { name: 'معلم 2', url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=400&auto=format&fit=crop' },
-                            { name: 'معلم 3', url: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?q=80&w=400&auto=format&fit=crop' },
-                            { name: 'معلمة', url: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400&auto=format&fit=crop' },
-                          ].map((preset) => (
-                            <button
-                              key={preset.name}
-                              type="button"
-                              onClick={() => setTeacherAvatar(preset.url)}
-                              className="text-[10px] px-2 py-0.5 rounded-lg bg-slate-100 hover:bg-indigo-50 text-slate-700 font-bold border border-slate-200"
-                            >
-                              {preset.name}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Subject, Specialty & Academic Stage */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="space-y-1">
-                      <label className="font-black text-slate-700 block">المادة الدراسية *</label>
-                      <select
-                        value={teacherSubject}
-                        onChange={(e) => setTeacherSubject(e.target.value)}
-                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-slate-900 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 bg-white"
-                      >
-                        <option value="اللغة العربية">اللغة العربية</option>
-                        <option value="اللغة الإنجليزية">اللغة الإنجليزية</option>
-                        <option value="الرياضيات">الرياضيات</option>
-                        <option value="العلوم">العلوم</option>
-                        <option value="الدراسات الاجتماعية">الدراسات الاجتماعية</option>
-                        <option value="فيزياء">فيزياء</option>
-                        <option value="كيمياء">كيمياء</option>
-                        <option value="أحياء">أحياء</option>
-                        <option value="جيولوجيا وعلوم البيئة">جيولوجيا وعلوم البيئة</option>
-                        <option value="اللغة الفرنسية">اللغة الفرنسية</option>
-                        <option value="اللغة الألمانية">اللغة الألمانية</option>
-                        <option value="رياضيات بحتة وتطبيقية">رياضيات بحتة وتطبيقية</option>
-                        <option value="تاريخ">تاريخ</option>
-                        <option value="جغرافيا">جغرافيا</option>
-                        <option value="فلسفة ومنطق">فلسفة ومنطق</option>
-                        <option value="علم نفس واجتماع">علم نفس واجتماع</option>
-                        <option value="الحاسب الآلي وتكنولوجيا المعلومات">الحاسب الآلي وتكنولوجيا المعلومات</option>
-                        <option value="التربية الدينية">التربية الدينية</option>
-                        <option value="أخرى">مادة أخرى (تحديد يدوي)</option>
-                      </select>
-                    </div>
-
-                    {teacherSubject === 'أخرى' && (
-                      <div className="space-y-1">
-                        <label className="font-black text-slate-700 block">اكتب اسم المادة *</label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="مثال: الإحصاء"
-                          value={teacherCustomSubject}
-                          onChange={(e) => setTeacherCustomSubject(e.target.value)}
-                          className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-slate-900 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                        />
-                      </div>
-                    )}
-
-                    <div className="space-y-1">
-                      <label className="font-black text-slate-700 block">المرحلة / الصف الدراسي الأساسي *</label>
-                      <select
-                        value={teacherSchoolYear}
-                        onChange={(e) => {
-                          const newGrade = e.target.value;
-                          setTeacherSchoolYear(newGrade);
-                          if (isPrimaryOrPrepGrade(newGrade)) {
-                            setTeacherSpecialty('');
-                          } else if (isThirdSecondaryGrade(newGrade)) {
-                            setTeacherSpecialty('علمي علوم');
-                          } else if (newGrade === 'الصف الأول الثانوي' || newGrade === 'الصف الثاني الثانوي') {
-                            setTeacherSpecialty('بكالوريا');
-                          } else {
-                            setTeacherSpecialty('عام لجميع الشعب');
-                          }
-                        }}
-                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-slate-900 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 bg-white"
-                      >
-                        <option value="جميع المراحل الدراسية">جميع المراحل (ابتدائي - إعدادي - ثانوي)</option>
-                        <optgroup label="المرحلة الابتدائية (بدون شعبة)">
-                          <option value="الصف الأول الابتدائي">الصف الأول الابتدائي</option>
-                          <option value="الصف الثاني الابتدائي">الصف الثاني الابتدائي</option>
-                          <option value="الصف الثالث الابتدائي">الصف الثالث الابتدائي</option>
-                          <option value="الصف الرابع الابتدائي">الصف الرابع الابتدائي</option>
-                          <option value="الصف الخامس الابتدائي">الصف الخامس الابتدائي</option>
-                          <option value="الصف السادس الابتدائي">الصف السادس الابتدائي</option>
-                        </optgroup>
-                        <optgroup label="المرحلة الإعدادية (بدون شعبة)">
-                          <option value="الصف الأول الإعدادي">الصف الأول الإعدادي</option>
-                          <option value="الصف الثاني الإعدادي">الصف الثاني الإعدادي</option>
-                          <option value="الصف الثالث الإعدادي">الصف الثالث الإعدادي</option>
-                        </optgroup>
-                        <optgroup label="المرحلة الثانوية">
-                          <option value="الصف الأول الثانوي">الصف الأول الثانوي</option>
-                          <option value="الصف الثاني الثانوي">الصف الثاني الثانوي</option>
-                          <option value="الصف الثالث الثانوي">الصف الثالث الثانوي</option>
-                        </optgroup>
-                      </select>
-                    </div>
-
-                    {!isPrimaryOrPrepGrade(teacherSchoolYear) && (
-                      <div className="space-y-1 animate-fadeIn">
-                        <label className="font-black text-slate-700 block">
-                          {isThirdSecondaryGrade(teacherSchoolYear) ? 'الشعبة (الصف الثالث الثانوي) *' : 'الشعبة (المرحلة الثانوية) *'}
-                        </label>
-                        {isThirdSecondaryGrade(teacherSchoolYear) ? (
-                          <select
-                            value={teacherSpecialty}
-                            onChange={(e) => setTeacherSpecialty(e.target.value)}
-                            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-slate-900 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 bg-white"
-                          >
-                            <option value="علمي علوم">علمي علوم</option>
-                            <option value="علمي رياضة">علمي رياضة</option>
-                            <option value="شعبة أدبي">شعبة أدبي</option>
-                            <option value="بكالوريا">بكالوريا</option>
-                            <option value="عام">عام</option>
-                            <option value="أزهر">أزهر</option>
-                            <option value="عام لجميع الشعب">عام لجميع الشعب</option>
-                          </select>
-                        ) : (teacherSchoolYear === 'الصف الأول الثانوي' || teacherSchoolYear === 'الصف الثاني الثانوي') ? (
-                          <select
-                            value={teacherSpecialty}
-                            onChange={(e) => setTeacherSpecialty(e.target.value)}
-                            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-slate-900 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 bg-white"
-                          >
-                            <option value="بكالوريا">بكالوريا</option>
-                            <option value="عام">عام</option>
-                            <option value="أزهر">أزهر</option>
-                            <option value="عام لجميع الشعب">عام لجميع الشعب</option>
-                          </select>
-                        ) : (
-                          <select
-                            value={teacherSpecialty}
-                            onChange={(e) => setTeacherSpecialty(e.target.value)}
-                            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-slate-900 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 bg-white"
-                          >
-                            <option value="عام لجميع الشعب">عام لجميع الشعب والمراحل</option>
-                            <option value="بكالوريا">بكالوريا</option>
-                            <option value="عام">عام</option>
-                            <option value="أزهر">أزهر</option>
-                            <option value="علمي علوم">علمي علوم</option>
-                            <option value="علمي رياضة">علمي رياضة</option>
-                            <option value="شعبة أدبي">شعبة أدبي</option>
-                          </select>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Account Number & Password */}
-                  <div className="p-4 rounded-2xl bg-indigo-50/60 border border-indigo-100 space-y-3">
-                    <span className="font-black text-indigo-950 block">بيانات اعتماد دخول المعلم (Login Credentials)</span>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <label className="font-black text-slate-700 block">رقم الحساب أو الهاتف *</label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="مثال: teacher-01 أو 01012345678"
-                          value={teacherAccountNumber}
-                          onChange={(e) => setTeacherAccountNumber(e.target.value)}
-                          className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-slate-900 text-xs font-mono font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 bg-white"
-                          dir="ltr"
-                        />
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="font-black text-slate-700 block">كلمة المرور الخاصة به *</label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="كلمة المرور"
-                          value={teacherPassword}
-                          onChange={(e) => setTeacherPassword(e.target.value)}
-                          className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-slate-900 text-xs font-mono font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 bg-white"
-                          dir="ltr"
-                        />
-                      </div>
-                    </div>
-
-                    <p className="text-[11px] text-indigo-800 leading-relaxed font-medium">
-                      💡 عند تسجيل دخول المعلم بهذا الرقم وكلمة المرور، ستفتح له مباشرة <b>لوحة المعلم والكورسات</b> حيث يتمكن من رفع وإدارة كورساته واختباراته في مادة ({teacherSubject}) وتخصصه فقط، وتظهر الكورسات في لوحة الإدارة لتحكم المشرف بها.
-                    </p>
-                  </div>
-
-                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
-                    {editingTeacherId ? (
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteTeacher(editingTeacherId, teacherName)}
-                        className="px-4 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white border border-rose-200 hover:border-rose-600 font-black text-xs transition-all flex items-center gap-1.5 cursor-pointer"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                        <span>حذف حساب المدرس 🗑️</span>
-                      </button>
-                    ) : (
-                      <div />
-                    )}
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setIsTeacherModalOpen(false)}
-                        className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-black text-xs cursor-pointer"
-                      >
-                        إلغاء
-                      </button>
-                      <button
-                        type="submit"
-                        className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs transition-all shadow-md shadow-indigo-200 cursor-pointer"
-                      >
-                        {editingTeacherId ? 'حفظ التعديلات ✅' : 'إنشاء حساب المعلم ✅'}
-                      </button>
-                    </div>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+      {activeTab === 'weekly_sales' && <WeeklyCourseSalesPage />}
 
       {/* ========================================================================= */}
       {/* TAB 2: COURSES MANAGEMENT & CREATION */}
       {/* ========================================================================= */}
       {activeTab === 'courses' && (() => {
-        const teacherCoursesList = courses.filter(
-          (c) => !!c.instructorId || !!c.teacherName || (c.instructor && c.instructor !== platformSettings.supervisorName && c.instructor !== 'إدارة المنصة')
-        );
-        const adminCoursesList = courses.filter(
-          (c) => !teacherCoursesList.some((tc) => tc.id === c.id)
-        );
-        const displayedCourses =
-          courseOwnerFilter === 'teachers'
-            ? teacherCoursesList
-            : courseOwnerFilter === 'admin'
-            ? adminCoursesList
-            : courses;
+        const displayedCourses = courses;
 
         return (
           <div className="space-y-6">
@@ -3823,7 +2597,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <span>إدارة ومتابعة الكورسات الأكاديمية</span>
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  التحكم الكامل بجميع الكورسات (المرفوعة من إدارة المنصة أو المرفوعة من المعلمين المعتمدين) مع إمكانية التعديل والحذف وإدارة الدروس
+                  التحكم الكامل بجميع كورسات منصة أ/ سوزان كريم فهمي مع إمكانية التعديل والحذف وإدارة الدروس
                 </p>
               </div>
 
@@ -3838,54 +2612,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             </div>
 
-            {/* Filter Pills for Courses: All / Teachers / Admin */}
-            <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-2xl border border-slate-200 w-fit max-w-full overflow-x-auto">
-              <button
-                type="button"
-                onClick={() => setCourseOwnerFilter('all')}
-                className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer whitespace-nowrap ${
-                  courseOwnerFilter === 'all'
-                    ? 'bg-white text-indigo-700 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                جميع الكورسات ({courses.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setCourseOwnerFilter('teachers')}
-                className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-                  courseOwnerFilter === 'teachers'
-                    ? 'bg-white text-indigo-700 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <span>👨‍🏫 كورسات المعلمين ({teacherCoursesList.length})</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setCourseOwnerFilter('admin')}
-                className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-                  courseOwnerFilter === 'admin'
-                    ? 'bg-white text-indigo-700 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <span>👑 كورسات إدارة المنصة ({adminCoursesList.length})</span>
-              </button>
-            </div>
-
             {/* Courses Grid */}
             {displayedCourses.length === 0 ? (
               <div className="bg-white border border-slate-200 rounded-[32px] p-12 text-center space-y-3">
                 <div className="w-14 h-14 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto text-2xl">
                   📚
                 </div>
-                <h4 className="text-sm font-black text-slate-800">لا توجد كورسات مطابقة في هذا القسم</h4>
+                <h4 className="text-sm font-black text-slate-800">لا توجد كورسات حالياً</h4>
                 <p className="text-xs text-slate-500">
-                  {courseOwnerFilter === 'teachers'
-                    ? 'لم يقم المدرسون بإضافة كورسات حتى الآن، أو قم بتعيين مدرس ليبدأ في الرفع.'
-                    : 'يمكنك إضافة كورس جديد الآن بالضغط على زر إضافة كورس.'}
+                  يمكنك إضافة كورس جديد الآن بالضغط على زر إضافة كورس.
                 </p>
               </div>
             ) : (
@@ -4283,29 +3018,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
 
                 <form onSubmit={handleCreateCourse} className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">المعلم المسؤول عن الكورس (المحاضر):</label>
-                    <select
-                      value={newCourseTeacherId}
-                      onChange={(e) => {
-                        const tId = e.target.value;
-                        setNewCourseTeacherId(tId);
-                        const matched = teachers.find((t) => t.id === tId);
-                        if (matched) {
-                          if (matched.subject) setNewCourseSubject(matched.subject);
-                          if (matched.schoolYear) setNewCourseYear(matched.schoolYear as SchoolYearGrade);
-                        }
-                      }}
-                      className="w-full p-3 rounded-2xl border border-slate-200 text-xs bg-white font-bold text-slate-900"
-                    >
-                      <option value="">👑 إدارة المنصة العامة ({platformSettings.supervisorName})</option>
-                      {teachers.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          👨‍🏫 {t.name} ({t.subject || 'المادة'} - {t.accountNumber || t.phone})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
 
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">اسم الكورس (Title):</label>
@@ -4314,7 +3026,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       required
                       value={newCourseTitle}
                       onChange={(e) => setNewCourseTitle(e.target.value)}
-                      placeholder="مثال: كورس الفيزياء الكهربية الحديثة 2027"
+                      placeholder="مثال: كورس الفلسفة والمنطق للثانوية العامة 2027"
                       className="w-full p-3 rounded-2xl border border-slate-200 text-xs focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
                     />
                   </div>
@@ -4340,34 +3052,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         onChange={(e) => {
                           const newGrade = e.target.value as SchoolYearGrade;
                           setNewCourseYear(newGrade);
-                          if (isPrimaryOrPrepGrade(newGrade)) {
-                            setNewCourseDivision('');
-                          } else if (isThirdSecondaryGrade(newGrade)) {
-                            setNewCourseDivision('علمي علوم');
-                          } else {
-                            setNewCourseDivision('بكالوريا');
-                          }
+                          setNewCourseDivision('بكالوريا');
                         }}
                         className="w-full p-3 rounded-2xl border border-slate-200 text-xs bg-white"
                       >
-                        <optgroup label="المرحلة الابتدائية (بدون شعبة)">
-                          <option value="الصف الأول الابتدائي">الصف الأول الابتدائي</option>
-                          <option value="الصف الثاني الابتدائي">الصف الثاني الابتدائي</option>
-                          <option value="الصف الثالث الابتدائي">الصف الثالث الابتدائي</option>
-                          <option value="الصف الرابع الابتدائي">الصف الرابع الابتدائي</option>
-                          <option value="الصف الخامس الابتدائي">الصف الخامس الابتدائي</option>
-                          <option value="الصف السادس الابتدائي">الصف السادس الابتدائي</option>
-                        </optgroup>
-                        <optgroup label="المرحلة الإعدادية (بدون شعبة)">
-                          <option value="الصف الأول الإعدادي">الصف الأول الإعدادي</option>
-                          <option value="الصف الثاني الإعدادي">الصف الثاني الإعدادي</option>
-                          <option value="الصف الثالث الإعدادي">الصف الثالث الإعدادي</option>
-                        </optgroup>
-                        <optgroup label="المرحلة الثانوية">
-                          <option value="الصف الأول الثانوي">الصف الأول الثانوي</option>
-                          <option value="الصف الثاني الثانوي">الصف الثاني الثانوي</option>
-                          <option value="الصف الثالث الثانوي">الصف الثالث الثانوي</option>
-                        </optgroup>
+                        <option value="الصف الأول الثانوي">الصف الأول الثانوي</option>
                       </select>
                     </div>
 
@@ -4414,7 +3103,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         required
                         value={newCourseSubject}
                         onChange={(e) => setNewCourseSubject(e.target.value)}
-                        placeholder="الفيزياء / الرياضيات / الكيمياء..."
+                        placeholder="الفيزياء / الرياضيات / الفلسفة والمنطق..."
                         className="w-full p-3 rounded-2xl border border-slate-200 text-xs"
                       />
                     </div>
@@ -4542,7 +3231,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <span>تعديل بيانات الكورس التعليمي</span>
                     </h3>
                     <p className="text-[11px] text-slate-400">
-                      تعديل العنوان، النوع، الشعبة، السعر، والغلاف لجميع كورسات المنصة والمعلمين
+                      تعديل العنوان، النوع، الشعبة، السعر، والغلاف لكورسات المنصة
                     </p>
                   </div>
                   <button
@@ -4604,34 +3293,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         onChange={(e) => {
                           const newGrade = e.target.value as SchoolYearGrade;
                           setEditCourseSchoolYear(newGrade);
-                          if (isPrimaryOrPrepGrade(newGrade)) {
-                            setEditCourseDivision('');
-                          } else if (isThirdSecondaryGrade(newGrade)) {
-                            setEditCourseDivision('علمي علوم');
-                          } else {
-                            setEditCourseDivision('بكالوريا');
-                          }
+                          setEditCourseDivision('بكالوريا');
                         }}
                         className="w-full p-3 rounded-2xl border border-slate-200 text-xs bg-white font-bold"
                       >
-                        <optgroup label="المرحلة الابتدائية (بدون شعبة)">
-                          <option value="الصف الأول الابتدائي">الصف الأول الابتدائي</option>
-                          <option value="الصف الثاني الابتدائي">الصف الثاني الابتدائي</option>
-                          <option value="الصف الثالث الابتدائي">الصف الثالث الابتدائي</option>
-                          <option value="الصف الرابع الابتدائي">الصف الرابع الابتدائي</option>
-                          <option value="الصف الخامس الابتدائي">الصف الخامس الابتدائي</option>
-                          <option value="الصف السادس الابتدائي">الصف السادس الابتدائي</option>
-                        </optgroup>
-                        <optgroup label="المرحلة الإعدادية (بدون شعبة)">
-                          <option value="الصف الأول الإعدادي">الصف الأول الإعدادي</option>
-                          <option value="الصف الثاني الإعدادي">الصف الثاني الإعدادي</option>
-                          <option value="الصف الثالث الإعدادي">الصف الثالث الإعدادي</option>
-                        </optgroup>
-                        <optgroup label="المرحلة الثانوية">
-                          <option value="الصف الأول الثانوي">الصف الأول الثانوي</option>
-                          <option value="الصف الثاني الثانوي">الصف الثاني الثانوي</option>
-                          <option value="الصف الثالث الثانوي">الصف الثالث الثانوي</option>
-                        </optgroup>
+                        <option value="الصف الأول الثانوي">الصف الأول الثانوي</option>
                       </select>
                     </div>
 
@@ -5236,845 +3902,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       )}
 
       {/* ========================================================================= */}
-      {/* TAB 4: ESSAY REVIEWS & GRADING (تصحيح ومراجعة المقالي) */}
-      {/* ========================================================================= */}
-      {activeTab === 'essay_reviews' && (
-        <div className="space-y-6">
-          <div className="bg-white border border-slate-200 rounded-[32px] p-6 sm:p-8 shadow-sm">
-            <h3 className="text-lg font-black text-slate-900 flex items-center gap-2 mb-1">
-              <CheckSquare className="w-5 h-5 text-sky-600" />
-              <span>مراجعة وتدقيق الإجابات المقالية للطلاب</span>
-            </h3>
-            <p className="text-xs text-slate-500">
-              استعراض الإجابات المكتوبة والصور الورقية المرفوعة من قِبل الطلاب، منح الدرجة، وإطلاق صورة الإجابة النموذجية للطالب
-            </p>
-          </div>
-
-          {/* Submissions List */}
-          <div className="bg-white border border-slate-200 rounded-[32px] overflow-hidden shadow-sm">
-            <div className="overflow-x-auto">
-              <table className="w-full text-right text-xs">
-                <thead className="bg-slate-50 border-b border-slate-200/80 text-slate-500 font-bold">
-                  <tr>
-                    <th className="p-4 pr-6">الطالب</th>
-                    <th className="p-4">الكورس والامتحان</th>
-                    <th className="p-4">تاريخ التقديم</th>
-                    <th className="p-4">حالة التصحيح</th>
-                    <th className="p-4">الدرجة</th>
-                    <th className="p-4 text-center">الإجراء</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {submissions.length > 0 ? (
-                    submissions.map((sub, idx) => (
-                      <tr key={sub.submissionId ? `${sub.submissionId}-${idx}` : `sub-${idx}`} className="hover:bg-slate-50/60 transition-colors">
-                        <td className="p-4 pr-6">
-                          <div className="font-black text-slate-900">{sub.studentName || 'طالب المنصة'}</div>
-                          <div className="text-[10px] text-slate-400 font-mono" dir="ltr">{sub.studentPhone || '—'}</div>
-                        </td>
-
-                        <td className="p-4">
-                          <div className="font-bold text-indigo-700">{sub.courseTitle || 'كورس المنهاج'}</div>
-                          <div className="text-[11px] text-slate-500">{sub.examTitle || 'امتحان الوحدة'}</div>
-                        </td>
-
-                        <td className="p-4 text-slate-500 font-mono">{sub.submittedAt}</td>
-
-                        <td className="p-4">
-                          {sub.status === 'under_review' ? (
-                            <span className="text-[11px] font-black px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-1 w-fit">
-                              <Clock className="w-3 h-3 animate-pulse" />
-                              <span>قيد المراجعة ⏳</span>
-                            </span>
-                          ) : (
-                            <span className="text-[11px] font-black px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1 w-fit">
-                              <CheckCircle2 className="w-3 h-3" />
-                              <span>تم التصحيح والاعتماد</span>
-                            </span>
-                          )}
-                        </td>
-
-                        <td className="p-4 font-mono font-bold text-slate-900">
-                          {sub.totalScore} / {sub.maxScore} ({sub.percentage}%)
-                        </td>
-
-                        <td className="p-4 text-center">
-                          <button
-                            onClick={() => handleOpenReviewModal(sub)}
-                            className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs transition-all shadow-xs flex items-center gap-1 mx-auto"
-                          >
-                            <FileEdit className="w-3.5 h-3.5" />
-                            <span>{sub.status === 'under_review' ? 'تدقيق وتصحيح المقالي' : 'تعديل الدرجة'}</span>
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={6} className="p-8 text-center text-slate-400">
-                        لا توجد إجابات امتحانات قيد المراجعة حالياً
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Review Modal */}
-          {selectedSubmissionForReview && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-              <div className="bg-white border border-slate-200 rounded-[32px] w-full max-w-3xl shadow-2xl p-6 sm:p-8 space-y-6 max-h-[90vh] overflow-y-auto">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                  <div>
-                    <h3 className="text-base font-black text-slate-900">
-                      تصحيح إجابة الطالب: {selectedSubmissionForReview.studentName}
-                    </h3>
-                    <p className="text-xs text-slate-500">
-                      {selectedSubmissionForReview.courseTitle} • {selectedSubmissionForReview.examTitle}
-                    </p>
-                  </div>
-                  <button onClick={() => setSelectedSubmissionForReview(null)} className="text-slate-400 hover:text-slate-600">
-                    ✕
-                  </button>
-                </div>
-
-                {/* Essay Questions Grading Blocks */}
-                <div className="space-y-4">
-                  {Object.entries(selectedSubmissionForReview.essayAnswers).map(([qId, ansText], qIdx) => {
-                    const studentPhoto = selectedSubmissionForReview.essayAnswerImages?.[qId];
-
-                    return (
-                      <div key={qId} className="p-5 rounded-3xl border border-slate-200 bg-slate-50/50 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-black text-indigo-700">السؤال المقالي #{qIdx + 1}</span>
-                          <span className="text-xs text-slate-400">الدرجة القصوى: 20 درجة</span>
-                        </div>
-
-                        {/* Student Written Text */}
-                        <div className="p-3.5 rounded-2xl bg-white border border-slate-200 text-xs space-y-1">
-                          <span className="text-[10px] text-slate-400 font-bold block">إجابة الطالب المكتوبة:</span>
-                          <p className="text-slate-900 leading-relaxed font-medium whitespace-pre-wrap">
-                            {ansText || 'لم يكتب الطالب نصاً واكتفى برفع الصورة الورقية.'}
-                          </p>
-                        </div>
-
-                        {/* Student Photo of Handwriting if attached */}
-                        {studentPhoto && (
-                          <div className="p-3 rounded-2xl bg-white border border-slate-200 space-y-1">
-                            <span className="text-[10px] text-slate-400 font-bold block">صورة ورقة إجابة الطالب:</span>
-                            <div className="max-h-60 overflow-hidden rounded-xl bg-slate-100 border border-slate-100 flex items-center justify-center">
-                              <img src={studentPhoto} alt="student answer sheet" className="max-h-60 object-contain" />
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Teacher Score & Feedback inputs */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                          <div>
-                            <label className="block text-xs font-bold text-slate-700 mb-1">الدرجة الممنوحة للطالب (من 20):</label>
-                            <input
-                              type="number"
-                              min="0"
-                              max="20"
-                              value={reviewMarksInput[qId] ?? 15}
-                              onChange={(e) =>
-                                setReviewMarksInput({ ...reviewMarksInput, [qId]: Number(e.target.value) })
-                              }
-                              className="w-full p-2.5 rounded-xl border border-slate-200 text-xs font-mono font-bold"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-xs font-bold text-slate-700 mb-1">ملاحظة وتوجيه المشرف للطالب:</label>
-                            <input
-                              type="text"
-                              value={reviewNotesInput[qId] || ''}
-                              onChange={(e) =>
-                                setReviewNotesInput({ ...reviewNotesInput, [qId]: e.target.value })
-                              }
-                              placeholder="مثال: خطوات صحيحة مع مراعاة التعويض الدقيق."
-                              className="w-full p-2.5 rounded-xl border border-slate-200 text-xs"
-                            />
-                          </div>
-                        </div>
-
-                        {/* Teacher releases model answer image */}
-                        <div className="pt-2">
-                          <label className="block text-xs font-bold text-emerald-900 mb-1">
-                            صورة الإجابة النموذجية المعتمدة (سيتم فتحها للطالب فور الاعتماد):
-                          </label>
-                          {reviewModelImagesInput[qId] ? (
-                            <div className="flex items-center gap-3 p-2 bg-emerald-50 rounded-xl border border-emerald-200">
-                              <img src={reviewModelImagesInput[qId]} alt="model" className="w-12 h-12 object-cover rounded-lg" />
-                              <span className="text-xs text-emerald-800 font-bold">تم إرفاق صورة الحل النموذجي ✅</span>
-                              <button
-                                onClick={() => setReviewModelImagesInput({ ...reviewModelImagesInput, [qId]: '' })}
-                                className="text-xs text-rose-600 font-bold mr-auto"
-                              >
-                                إزالة
-                              </button>
-                            </div>
-                          ) : (
-                            <label className="p-2.5 border border-dashed border-emerald-300 rounded-xl block text-center cursor-pointer text-xs font-bold text-emerald-800 hover:bg-emerald-50 bg-white">
-                              <Upload className="w-3.5 h-3.5 inline ml-1" />
-                              <span>رفع صورة الحل النموذجي للمقالي</span>
-                              <input
-                                type="file"
-                                accept="image/*"
-                                className="hidden"
-                                onChange={(e) =>
-                                  handleImageUpload(e, (base64) =>
-                                    setReviewModelImagesInput({ ...reviewModelImagesInput, [qId]: base64 })
-                                  )
-                                }
-                              />
-                            </label>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
-                  <button
-                    onClick={() => setSelectedSubmissionForReview(null)}
-                    className="px-5 py-2.5 rounded-2xl bg-slate-100 text-slate-700 font-black text-xs"
-                  >
-                    إلغاء
-                  </button>
-                  <button
-                    onClick={handleFinalizeEssayGrading}
-                    className="px-6 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs transition-all shadow-md shadow-emerald-200 flex items-center gap-1.5"
-                  >
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>اعتماد الدرجة ونشر الحل النموذجي للطالب ✅</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* TAB 5: COURSE ACCESS CODES & WALLET RECHARGE CODES */}
-      {/* ========================================================================= */}
-      {activeTab === 'access_codes' && (
-        <div className="space-y-6 animate-fadeIn">
-          {/* WALLET RECHARGE CODES GENERATOR (أكواد شحن المحفظة بمبلغ معين) */}
-          <div className="bg-gradient-to-l from-amber-50 via-yellow-50/40 to-white border-2 border-amber-200 rounded-[32px] p-6 sm:p-8 shadow-sm space-y-5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-amber-200/70 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-2xl bg-amber-500 text-white flex items-center justify-center shadow-sm">
-                  <CreditCard className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="text-lg sm:text-xl font-black text-slate-900 flex items-center gap-2">
-                    <span>توليد أكواد شحن محفظة الطلاب بمبلغ معين 💰</span>
-                    <span className="px-2.5 py-0.5 rounded-full bg-amber-200 text-amber-950 text-xs font-black">
-                      شحن رصيد فوري
-                    </span>
-                  </h3>
-                  <p className="text-xs text-slate-600 mt-0.5 font-bold">
-                    أنشئ أكواد شحن بمبالغ محددة (مثلاً 50 أو 100 أو 200 ج.م) ليقوم الطالب بإدخال الكود في محفظته وشحن رصيده فوراً لشراء أي كورس
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 text-xs font-black">
-                <span className="px-3 py-1.5 rounded-xl bg-white border border-amber-200 text-amber-900">
-                  إجمالي الأكواد: {walletCodes.length}
-                </span>
-                <span className="px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-800">
-                  متاح: {walletCodes.filter((c) => !c.isUsed).length}
-                </span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 items-end">
-              <div className="space-y-1.5">
-                <label className="text-xs font-black text-slate-800 block">
-                  مبلغ شحن الكود (بالجنيه المصري):
-                </label>
-                <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
-                  {[50, 100, 150, 200, 300, 500].map((amt) => (
-                    <button
-                      key={amt}
-                      type="button"
-                      onClick={() => setWalletCodeAmount(amt)}
-                      className={`px-2.5 py-1 rounded-lg text-[11px] font-black transition-all cursor-pointer ${
-                        walletCodeAmount === amt
-                          ? 'bg-amber-600 text-white shadow-2xs'
-                          : 'bg-white border border-amber-200 text-amber-900 hover:bg-amber-100'
-                      }`}
-                    >
-                      {amt} ج.م
-                    </button>
-                  ))}
-                </div>
-                <input
-                  type="number"
-                  min="1"
-                  value={walletCodeAmount}
-                  onChange={(e) => setWalletCodeAmount(Number(e.target.value))}
-                  className="w-full p-3 rounded-2xl border border-amber-300 bg-white text-sm font-black font-mono text-slate-900"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-black text-slate-800 block">
-                  عدد الأكواد المطلوب توليدها:
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  max="100"
-                  value={walletCodeCount}
-                  onChange={(e) => setWalletCodeCount(Number(e.target.value))}
-                  className="w-full p-3 rounded-2xl border border-amber-300 bg-white text-sm font-black font-mono text-slate-900"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-black text-slate-800 block">
-                  ملاحظة على الكود (اختياري):
-                </label>
-                <input
-                  type="text"
-                  value={walletCodeNote}
-                  onChange={(e) => setWalletCodeNote(e.target.value)}
-                  placeholder="مثال: دفعة شهر أكتوبر..."
-                  className="w-full p-3 rounded-2xl border border-amber-300 bg-white text-xs font-bold text-slate-900"
-                />
-              </div>
-
-              <button
-                type="button"
-                onClick={() => handleGenerateWalletCodes()}
-                className="w-full py-3.5 px-5 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white font-black text-xs transition-all shadow-md shadow-amber-500/20 flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                <span>توليد {walletCodeCount} كود بقيمة {walletCodeAmount} ج.م 💰</span>
-              </button>
-            </div>
-
-            {/* Generated Wallet Codes List */}
-            {walletCodes.length > 0 && (
-              <div className="pt-3 border-t border-amber-200/70 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-black text-slate-800">
-                    قائمة أكواد شحن المحفظة ({walletCodes.length} كود):
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-80 overflow-y-auto p-1">
-                  {walletCodes.map((wc) => (
-                    <div
-                      key={wc.code}
-                      className={`p-3.5 rounded-2xl border flex flex-col justify-between gap-2 ${
-                        wc.isUsed
-                          ? 'bg-slate-100 border-slate-200 opacity-75'
-                          : 'bg-white border-amber-300 shadow-2xs'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 font-black text-xs font-mono">
-                          💰 {wc.amount} ج.م
-                        </span>
-                        <span
-                          className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
-                            wc.isUsed ? 'bg-slate-200 text-slate-600' : 'bg-emerald-100 text-emerald-800'
-                          }`}
-                        >
-                          {wc.isUsed ? 'تم الشحن ✓' : 'متاح للشحن ✅'}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between bg-slate-50 px-3 py-2 rounded-xl border border-slate-200/80">
-                        <span className="font-mono font-black text-xs sm:text-sm text-slate-900 tracking-wider" dir="ltr">
-                          {wc.code}
-                        </span>
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => handleCopyCode(wc.code)}
-                            className="p-1.5 rounded-lg bg-white hover:bg-amber-50 text-slate-600 hover:text-amber-700 border border-slate-200 cursor-pointer"
-                            title="نسخ كود الشحن"
-                          >
-                            {copiedCode === wc.code ? (
-                              <Check className="w-3.5 h-3.5 text-emerald-600" />
-                            ) : (
-                              <Copy className="w-3.5 h-3.5" />
-                            )}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteWalletCode(wc.code)}
-                            className="p-1.5 rounded-lg bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 border border-slate-200 cursor-pointer"
-                            title="حذف الكود"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                      {wc.isUsed && wc.usedByStudentName ? (
-                        <div className="text-[10px] font-bold text-slate-600 flex items-center justify-between">
-                          <span>شحنه: {wc.usedByStudentName}</span>
-                          <span dir="ltr">{wc.usedByStudentPhone}</span>
-                        </div>
-                      ) : (
-                        <div className="text-[10px] text-slate-400 flex items-center justify-between">
-                          <span>{wc.notes || `كارت شحن ${wc.amount} ج.م`}</span>
-                          <span>{wc.createdAt}</span>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Generator Control Panel */}
-          <div className="bg-white border border-slate-200 rounded-[32px] p-6 sm:p-8 shadow-sm space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
-              <div>
-                <div className="flex items-center gap-2">
-                  <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
-                    <Key className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-lg sm:text-xl font-black text-slate-900 flex items-center gap-2">
-                      <span>توليد كروت اشتراك منصة قلب العلم</span>
-                      <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-bold">
-                        تصميم الكارت الذهبي المعتمد
-                      </span>
-                    </h3>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      حدد الكورس والمدرس وعدد الكروت ليتم توليدها فورياً وتصديرها كصور كروت جاهزة للطباعة والتوزيع
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* View Switcher */}
-              <div className="flex items-center gap-1 bg-slate-100 p-1.5 rounded-2xl self-start sm:self-auto">
-                <button
-                  type="button"
-                  onClick={() => setAccessCodesDisplayMode('cards')}
-                  className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black transition-all ${
-                    accessCodesDisplayMode === 'cards'
-                      ? 'bg-white text-indigo-600 shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  <LayoutGrid className="w-3.5 h-3.5" />
-                  <span>معرض الكروت</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAccessCodesDisplayMode('table')}
-                  className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black transition-all ${
-                    accessCodesDisplayMode === 'table'
-                      ? 'bg-white text-indigo-600 shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  <List className="w-3.5 h-3.5" />
-                  <span>جدول الأكواد</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Inputs Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Field 1: Course Selection */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-black text-slate-700 flex items-center gap-1">
-                  <BookOpen className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>الكورس المرتبط:</span>
-                </label>
-                <select
-                  value={codeSelectedCourse}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setCodeSelectedCourse(val);
-                    if (val !== 'general' && val !== 'custom') {
-                      const matched = courses.find((c) => c.id === val);
-                      if (matched?.instructor) {
-                        setCodeTeacherName(matched.instructor);
-                      }
-                    }
-                  }}
-                  className="w-full p-3 rounded-2xl border border-slate-200 text-xs bg-slate-50/50 hover:bg-white focus:bg-white font-bold focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 transition-all"
-                >
-                  <option value="general">🌟 كود اشتراك شامل (لكافة كورسات المنصة)</option>
-                  {courses.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      كورس: {c.title}
-                    </option>
-                  ))}
-                  <option value="custom">✍️ كتابة اسم كورس يدوي مخصص...</option>
-                </select>
-
-                {codeSelectedCourse === 'custom' && (
-                  <input
-                    type="text"
-                    value={codeCustomCourseTitle}
-                    onChange={(e) => setCodeCustomCourseTitle(e.target.value)}
-                    placeholder="اكتب اسم الكورس (مثال: فيزياء 3 ثانوي - الباب الأول)"
-                    className="w-full mt-2 p-2.5 rounded-xl border border-indigo-200 text-xs bg-indigo-50/30 font-bold focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20"
-                  />
-                )}
-              </div>
-
-              {/* Field 2: Teacher Name */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-black text-slate-700 flex items-center gap-1">
-                  <GraduationCap className="w-3.5 h-3.5 text-violet-600" />
-                  <span>اسم المدرس (المكتوب على الكارت):</span>
-                </label>
-                <input
-                  type="text"
-                  value={codeTeacherName}
-                  onChange={(e) => setCodeTeacherName(e.target.value)}
-                  placeholder="إدارة المنصة"
-                  className="w-full p-3 rounded-2xl border border-slate-200 text-xs bg-slate-50/50 hover:bg-white focus:bg-white font-bold focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 transition-all"
-                />
-              </div>
-
-              {/* Field 3: Number of codes to generate */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-black text-slate-700 flex items-center justify-between">
-                  <span className="flex items-center gap-1">
-                    <Key className="w-3.5 h-3.5 text-amber-500" />
-                    <span>عدد الأكواد المطلوبة:</span>
-                  </span>
-                  <span className="text-[10px] text-indigo-600 font-bold">يمكنك تحديد أي عدد</span>
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min="1"
-                    max="500"
-                    value={codeCount}
-                    onChange={(e) => setCodeCount(Math.max(1, parseInt(e.target.value) || 1))}
-                    className="w-24 p-3 rounded-2xl border border-slate-200 text-sm bg-slate-50/50 hover:bg-white focus:bg-white font-black text-center focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 transition-all"
-                  />
-                  <div className="flex-1 flex items-center gap-1 overflow-x-auto py-1">
-                    {[1, 5, 10, 25, 50].map((num) => (
-                      <button
-                        key={num}
-                        type="button"
-                        onClick={() => setCodeCount(num)}
-                        className={`px-2.5 py-1.5 rounded-xl text-xs font-black transition-all ${
-                          codeCount === num
-                            ? 'bg-indigo-600 text-white shadow-xs'
-                            : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                        }`}
-                      >
-                        {num}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Submit Generator Button */}
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
-              <div className="text-xs text-slate-500 font-bold">
-                💡 سيتم إنشاء كروت اشتراك فريدة ومحمية تحمل شعار قلب العلم جاهزة للتحميل الفوري كصور عالية الدقة.
-              </div>
-
-              <button
-                type="button"
-                onClick={() => handleGenerateCodes(codeCount)}
-                className="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-gradient-to-r from-indigo-600 via-violet-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white font-black text-sm transition-all shadow-md shadow-indigo-200 hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer active:scale-95"
-              >
-                <Sparkles className="w-4 h-4 text-amber-300" />
-                <span>توليد ({codeCount}) كارت اشتراك فوري ✨</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Stats and Filter Bar */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white border border-slate-200 rounded-[28px] p-4 sm:p-5 shadow-xs">
-            <div className="flex items-center gap-2 flex-wrap">
-              <div className="px-3.5 py-1.5 rounded-xl bg-slate-100 text-slate-700 text-xs font-black">
-                إجمالي الكروت: {accessCodes.length}
-              </div>
-              <div className="px-3.5 py-1.5 rounded-xl bg-emerald-100 text-emerald-800 text-xs font-black">
-                متاح للتوزيع: {accessCodes.filter((c) => !c.isUsed).length}
-              </div>
-              <div className="px-3.5 py-1.5 rounded-xl bg-slate-200 text-slate-700 text-xs font-black">
-                تم التفعيل: {accessCodes.filter((c) => c.isUsed).length}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-              {/* Search */}
-              <div className="relative flex-1 sm:w-64">
-                <Search className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={codeSearchQuery}
-                  onChange={(e) => setCodeSearchQuery(e.target.value)}
-                  placeholder="بحث برقم الكود أو الكورس..."
-                  className="w-full pr-8 pl-3 py-2 rounded-xl border border-slate-200 text-xs bg-slate-50 focus:bg-white focus:outline-hidden font-bold"
-                />
-              </div>
-
-              {/* Status Filter */}
-              <select
-                value={codeFilterStatus}
-                onChange={(e) => setCodeFilterStatus(e.target.value as any)}
-                className="p-2 rounded-xl border border-slate-200 text-xs bg-slate-50 font-bold"
-              >
-                <option value="all">كل الحالات</option>
-                <option value="available">متاح فقط</option>
-                <option value="used">مستخدم فقط</option>
-              </select>
-
-              {/* Print All Button */}
-              {accessCodes.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => window.print()}
-                  className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-black flex items-center gap-1.5 shadow-xs transition-colors shrink-0"
-                  title="طباعة جميع الكروت"
-                >
-                  <Printer className="w-3.5 h-3.5" />
-                  <span>طباعة</span>
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* DISPLAY CONTENT: CARDS VIEW OR TABLE VIEW */}
-          {(() => {
-            const filteredCodes = accessCodes.filter((c) => {
-              if (codeFilterStatus === 'available' && c.isUsed) return false;
-              if (codeFilterStatus === 'used' && !c.isUsed) return false;
-              if (codeSearchQuery.trim()) {
-                const q = codeSearchQuery.trim().toLowerCase();
-                const matchCode = c.code.toLowerCase().includes(q);
-                const matchCourse = c.courseTitle?.toLowerCase().includes(q);
-                const matchTeacher = c.teacherName?.toLowerCase().includes(q);
-                const matchStudent = c.usedByStudentName?.toLowerCase().includes(q);
-                if (!matchCode && !matchCourse && !matchTeacher && !matchStudent) return false;
-              }
-              return true;
-            });
-
-            if (filteredCodes.length === 0) {
-              return (
-                <div className="bg-white border border-dashed border-slate-300 rounded-[32px] p-12 text-center space-y-4">
-                  <div className="w-16 h-16 rounded-3xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto">
-                    <Key className="w-8 h-8" />
-                  </div>
-                  <div>
-                    <h4 className="text-base font-black text-slate-800">لا توجد كروت اشتراك مطابقة</h4>
-                    <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-                      اضغط على زر &quot;توليد كروت اشتراك فوري&quot; بالأعلى لإنشاء كروت جديدة بتصميم كارت قلب العلم المعتمد.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleGenerateCodes(5)}
-                    className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs transition-colors shadow-xs"
-                  >
-                    توليد 5 كروت تجريبية الآن
-                  </button>
-                </div>
-              );
-            }
-
-            if (accessCodesDisplayMode === 'cards') {
-              return (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {filteredCodes.map((code) => (
-                    <div
-                      key={code.code}
-                      className="bg-white border border-slate-200/90 rounded-[36px] p-5 shadow-sm hover:shadow-md transition-shadow relative"
-                    >
-                      <div className="flex items-center justify-between mb-3 px-2">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${
-                              code.isUsed
-                                ? 'bg-slate-100 text-slate-600'
-                                : 'bg-emerald-100 text-emerald-800'
-                            }`}
-                          >
-                            {code.isUsed ? 'تم الاستخدام' : 'جاهز للتسليم ✅'}
-                          </span>
-                          <span className="text-[10px] text-slate-400">{code.createdAt}</span>
-                        </div>
-
-                        <button
-                          onClick={() => handleDeleteCode(code.code)}
-                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                          title="حذف الكارت"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-
-                      <SubscriptionCard accessCode={code} onCopy={handleCopyCode} />
-
-                      {code.isUsed && code.usedByStudentName && (
-                        <div className="mt-4 p-3 rounded-2xl bg-slate-50 border border-slate-100 text-xs flex items-center justify-between text-slate-600 font-bold">
-                          <span>الطالب الذي فعّله: {code.usedByStudentName}</span>
-                          <span dir="ltr">{code.usedByStudentPhone}</span>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              );
-            }
-
-            // Table View
-            return (
-              <div className="bg-white border border-slate-200 rounded-[32px] overflow-hidden shadow-sm">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-right text-xs">
-                    <thead className="bg-slate-50 border-b border-slate-200/80 text-slate-500 font-bold">
-                      <tr>
-                        <th className="p-4 pr-6">كود التفعيل</th>
-                        <th className="p-4">الكورس</th>
-                        <th className="p-4">اسم المدرس</th>
-                        <th className="p-4">الحالة</th>
-                        <th className="p-4">استخدمه الطالب</th>
-                        <th className="p-4">تاريخ التوليد</th>
-                        <th className="p-4 text-center">الإجراءات</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 font-mono">
-                      {filteredCodes.map((code) => (
-                        <tr key={code.code} className="hover:bg-slate-50/60 transition-colors">
-                          <td className="p-4 pr-6">
-                            <div className="flex items-center gap-2">
-                              <span className="font-black text-slate-900 text-sm tracking-wider">
-                                {code.code}
-                              </span>
-                              <button
-                                onClick={() => handleCopyCode(code.code)}
-                                className="p-1 rounded-lg text-slate-400 hover:text-indigo-600"
-                                title="نسخ الكود"
-                              >
-                                {copiedCode === code.code ? (
-                                  <Check className="w-3.5 h-3.5 text-emerald-600" />
-                                ) : (
-                                  <Copy className="w-3.5 h-3.5" />
-                                )}
-                              </button>
-                            </div>
-                          </td>
-
-                          <td className="p-4 font-sans font-bold text-slate-800">
-                            {code.courseTitle}
-                          </td>
-
-                          <td className="p-4 font-sans text-slate-600">
-                            {code.teacherName || '—'}
-                          </td>
-
-                          <td className="p-4 font-sans">
-                            {code.isUsed ? (
-                              <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">
-                                مستخدم ومفعل
-                              </span>
-                            ) : (
-                              <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
-                                متاح وجاهز للإرسال ✅
-                              </span>
-                            )}
-                          </td>
-
-                          <td className="p-4 font-sans">
-                            {code.usedByStudentName ? (
-                              <div>
-                                <span className="font-bold text-slate-900">
-                                  {code.usedByStudentName}
-                                </span>
-                                <span className="text-[10px] text-slate-400 block" dir="ltr">
-                                  {code.usedByStudentPhone}
-                                </span>
-                              </div>
-                            ) : (
-                              <span className="text-slate-400">—</span>
-                            )}
-                          </td>
-
-                          <td className="p-4 text-slate-500">{code.createdAt}</td>
-
-                          <td className="p-4 text-center font-sans">
-                            <div className="flex items-center justify-center gap-1">
-                              <button
-                                onClick={() => setSelectedCardForModal(code)}
-                                className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-black text-[11px] transition-colors flex items-center gap-1"
-                                title="معاينة كارت الاشتراك"
-                              >
-                                <Eye className="w-3.5 h-3.5" />
-                                <span>عرض الكارت</span>
-                              </button>
-
-                              <button
-                                onClick={() => handleDeleteCode(code.code)}
-                                className="text-slate-400 hover:text-rose-600 p-1 rounded-lg transition-colors"
-                                title="حذف الكود"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* Modal for full-scale Card Preview & Export */}
-          {selectedCardForModal && (
-            <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-              <div className="bg-white rounded-[36px] p-6 max-w-3xl w-full space-y-4 shadow-2xl relative">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                  <h3 className="font-black text-slate-900 text-base flex items-center gap-2">
-                    <Key className="w-4 h-4 text-indigo-600" />
-                    <span>معاينة كارت الاشتراك المعتمد</span>
-                  </h3>
-                  <button
-                    onClick={() => setSelectedCardForModal(null)}
-                    className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition-colors"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-
-                <div className="py-2">
-                  <SubscriptionCard accessCode={selectedCardForModal} onCopy={handleCopyCode} />
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* TAB: CUSTOM AUTOMATED MOBILE WALLET & SMS GATEWAY / COUPONS */}
-      {/* ========================================================================= */}
-      {activeTab === 'fawaterak' && (
-        <WalletGatewayAdminTab courses={courses} students={students} initialSubTab="orders" />
-      )}
-      {activeTab === 'coupons' && (
-        <WalletGatewayAdminTab courses={courses} students={students} initialSubTab="coupons" />
-      )}
-
-      {/* ========================================================================= */}
       {/* TAB 6: COMPETITIONS MANAGEMENT */}
       {/* ========================================================================= */}
       {activeTab === 'competitions' && (
@@ -6347,14 +4174,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    if (window.confirm('تأكيد: هل ترغب في تصفير المنصة بالكامل (كورسات، مسابقات، طلاب، أكواد، إجابات)؟')) {
+                    if (window.confirm('تأكيد: هل ترغب في تصفير المنصة بالكامل (كورسات، مسابقات، طلاب، إجابات)؟')) {
                       onUpdateCourses([]);
                       saveCourses([]);
                       onUpdateCompetitions([]);
                       saveCompetitions([]);
                       onUpdateStudents([]);
                       saveUsers([]);
-                      saveAccessCodes([]);
                       saveSubmissions([]);
                       showFeedback('تم تصفير المنصة بالكامل وهي الآن نظيفة 100% لإدارتك المباشرة.');
                     }
@@ -6377,7 +4203,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <h4 className="text-sm font-black text-slate-900 flex items-center gap-2">
                       <span>إدارة قاعدة البيانات السحابية الدائمة (Firebase Firestore)</span>
                       <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800">
-                        qalbalelm
+                        alesraa-academy
                       </span>
                     </h4>
                     <p className="text-xs text-slate-500">
@@ -6524,7 +4350,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
                 <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100 text-center">
                   <span className="text-slate-400 text-[11px] block">مشروع Firebase</span>
-                  <span className="text-xs font-mono font-black text-indigo-600 block mt-1">qalbalelm</span>
+                  <span className="text-xs font-mono font-black text-indigo-600 block mt-1">alesraa-academy</span>
                 </div>
               </div>
             </div>

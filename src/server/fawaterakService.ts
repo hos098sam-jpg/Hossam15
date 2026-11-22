@@ -7,9 +7,31 @@ import type { Coupon, FawaterakInvoice } from "../types";
 // 1. FAWATERAK CREDENTIALS & CONFIGURATION
 // ============================================================================
 
+import fs from "fs";
+import path from "path";
+
+const DATA_DIR = path.join(process.cwd(), "data");
+const COUPONS_FILE = path.join(DATA_DIR, "coupons.json");
+const FAWATERAK_CONFIG_FILE = path.join(DATA_DIR, "fawaterak_config.json");
+
+function loadSavedFawaterakConfig(): { hashKey: string; providerKey: string } {
+  try {
+    if (fs.existsSync(FAWATERAK_CONFIG_FILE)) {
+      const parsed = JSON.parse(fs.readFileSync(FAWATERAK_CONFIG_FILE, "utf8"));
+      return {
+        hashKey: typeof parsed?.hashKey === "string" ? parsed.hashKey.trim() : "",
+        providerKey: typeof parsed?.providerKey === "string" ? parsed.providerKey.trim() : "",
+      };
+    }
+  } catch {}
+  return { hashKey: "", providerKey: "" };
+}
+
+const savedFawaterak = loadSavedFawaterakConfig();
+
 export const FAWATERAK_CONFIG = {
-  hashKey: process.env.FAWATERAK_HASH_KEY || "e0197af48fcf33c7cbf2b2c8899f252ada0f10baa9257f83b2",
-  providerKey: process.env.FAWATERAK_PROVIDER_KEY || "FAWATERAK.30884",
+  hashKey: (process.env.FAWATERAK_HASH_KEY || savedFawaterak.hashKey || "").trim(),
+  providerKey: (process.env.FAWATERAK_PROVIDER_KEY || savedFawaterak.providerKey || "").trim(),
   baseUrl: process.env.FAWATERAK_BASE_URL || "https://fawaterk.com",
   apiUrl: process.env.FAWATERAK_API_URL || "https://app.fawaterk.com/api/v2",
 };
@@ -65,11 +87,7 @@ const initialCoupons: Coupon[] = [
   },
 ];
 
-import fs from "fs";
-import path from "path";
-
-const DATA_DIR = path.join(process.cwd(), "data");
-const COUPONS_FILE = path.join(DATA_DIR, "coupons.json");
+// Coupons disk persistence helpers
 
 export function loadDiskCoupons(): Coupon[] {
   try {
@@ -115,7 +133,7 @@ export function getAppBaseUrl(req?: any): string {
       return `${proto}://${host}`;
     }
   }
-  return "https://qalbalelm.web.app";
+  return "https://motafalsifa.vercel.app";
 }
 
 export function updateFawaterakConfig(newHashKey?: string, newProviderKey?: string) {
@@ -124,6 +142,26 @@ export function updateFawaterakConfig(newHashKey?: string, newProviderKey?: stri
   }
   if (newProviderKey && typeof newProviderKey === "string" && newProviderKey.trim()) {
     FAWATERAK_CONFIG.providerKey = newProviderKey.trim();
+  }
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    fs.writeFileSync(
+      FAWATERAK_CONFIG_FILE,
+      JSON.stringify(
+        {
+          hashKey: FAWATERAK_CONFIG.hashKey,
+          providerKey: FAWATERAK_CONFIG.providerKey,
+          updatedAt: new Date().toISOString(),
+        },
+        null,
+        2
+      ),
+      { encoding: "utf8", mode: 0o600 }
+    );
+  } catch (e) {
+    console.warn("Could not save Fawaterak config to disk:", e);
   }
   return {
     success: true,
@@ -336,10 +374,10 @@ export async function createFawaterakInvoice(params: CreateInvoiceParams) {
   }
 
   const cleanPhone = (studentPhone || "").replace(/\D/g, "");
-  const nameParts = (studentName || "طالب منصة قلب العلم").trim().split(" ");
+  const nameParts = (studentName || "طالب منصة المتفلسفة ").trim().split(" ");
   const firstName = nameParts[0] || "طالب";
-  const lastName = nameParts.slice(1).join(" ") || "منصة قلب العلم";
-  const cleanEmail = studentEmail || `${cleanPhone || "student"}@qalbalelm.edu`;
+  const lastName = nameParts.slice(1).join(" ") || "منصة المتفلسفة ";
+  const cleanEmail = studentEmail || `${cleanPhone || "student"}@al-motafalsifa.edu`;
 
   // Payload for Fawaterak V2 createInvoiceLink
   const invoicePayload: any = {
@@ -472,11 +510,11 @@ export async function createFawaterakInvoice(params: CreateInvoiceParams) {
     couponApplied: !!appliedCoupon,
     couponCode: appliedCoupon?.code,
     activationUrls: {
-      domain: "https://qalbalelm.web.app",
-      webhook: "https://qalbalelm.web.app/api/fawaterak/webhook",
-      successCallback: "https://qalbalelm.web.app/api/fawaterak/callback?status=paid",
-      failedCallback: "https://qalbalelm.web.app/api/fawaterak/callback?status=failed",
-      pendingCallback: "https://qalbalelm.web.app/api/fawaterak/callback?status=pending",
+      domain: "https://motafalsifa.vercel.app",
+      webhook: "https://motafalsifa.vercel.app/api/fawaterak/webhook",
+      successCallback: "https://motafalsifa.vercel.app/api/fawaterak/callback?status=paid",
+      failedCallback: "https://motafalsifa.vercel.app/api/fawaterak/callback?status=failed",
+      pendingCallback: "https://motafalsifa.vercel.app/api/fawaterak/callback?status=pending",
     },
   };
 }
@@ -485,11 +523,19 @@ export async function createFawaterakInvoice(params: CreateInvoiceParams) {
 // 5. WEBHOOK & IPN SIGNATURE VERIFICATION
 // ============================================================================
 
+function timingSafeHexMatch(a: string, b: string): boolean {
+  const bufA = Buffer.from(String(a || "").trim().toLowerCase(), "utf8");
+  const bufB = Buffer.from(String(b || "").trim().toLowerCase(), "utf8");
+  if (bufA.length === 0 || bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
 export function verifyWebhookSignature(payload: any, signatureHeader?: string): boolean {
   try {
-    if (!FAWATERAK_CONFIG.hashKey) return true;
+    if (!FAWATERAK_CONFIG.hashKey) {
+      return false;
+    }
 
-    // Check header or body hash
     const incomingHash =
       signatureHeader ||
       payload?.hash ||
@@ -497,33 +543,29 @@ export function verifyWebhookSignature(payload: any, signatureHeader?: string): 
       payload?.Hash ||
       payload?.data?.hash;
 
-    if (!incomingHash) {
-      // If no hash was sent in test mode, allow verification with invoice status check
-      return true;
+    if (!incomingHash || typeof incomingHash !== "string") {
+      return false;
     }
 
-    // Fawaterak HMAC SHA256 verification
     const stringified = typeof payload === "string" ? payload : JSON.stringify(payload);
     const hmac = crypto.createHmac("sha256", FAWATERAK_CONFIG.hashKey);
     hmac.update(stringified);
     const computedHmac = hmac.digest("hex");
 
-    if (computedHmac.toLowerCase() === String(incomingHash).toLowerCase()) {
+    if (timingSafeHexMatch(computedHmac, incomingHash)) {
       return true;
     }
 
-    // Fallback: SHA256 over concatenated string (invoice_id + invoice_status)
     const invId = payload?.invoice_id || payload?.invoiceId || payload?.data?.invoice_id || "";
     const invStatus = payload?.invoice_status || payload?.status || payload?.data?.invoice_status || "";
     const rawConcat = `${invId}${invStatus}${FAWATERAK_CONFIG.hashKey}`;
     const shaHash = crypto.createHash("sha256").update(rawConcat).digest("hex");
 
-    if (shaHash.toLowerCase() === String(incomingHash).toLowerCase()) {
+    if (timingSafeHexMatch(shaHash, incomingHash)) {
       return true;
     }
 
-    // If signature format varies in sandbox, accept if hash matches hashKey directly
-    return String(incomingHash).toLowerCase() === FAWATERAK_CONFIG.hashKey.toLowerCase();
+    return false;
   } catch (err) {
     console.warn("Signature verification error:", err);
     return false;

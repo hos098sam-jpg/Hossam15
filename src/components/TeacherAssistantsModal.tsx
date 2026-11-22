@@ -43,25 +43,25 @@ export const ASSISTANT_SPECIALTIES: {
 }[] = [
   {
     id: 'student_support',
-    label: 'مسؤول عن الرد على الطلاب',
-    shortLabel: 'الرد على الطلاب 💬',
-    desc: 'يدخل فقط على قسم رسائل واستفسارات الطلاب والدعم الفني والمنتدى للرد عليهم دون عرض أي قسم آخر.',
+    label: 'الدعم العلمي والرد على استفسارات الطلاب',
+    shortLabel: 'الدعم العلمي والرد على الطلاب 💬',
+    desc: 'يدخل فقط على قسم متابعة الطلاب والرد على الأسئلة العلمية في الدروس والمنتدى، ولا يرى أي قسم آخر.',
     badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-200',
     icon: MessageSquare,
   },
   {
     id: 'essay_grading',
-    label: 'مسؤول عن تصحيح المقالي',
-    shortLabel: 'تصحيح المقالي ✍️',
-    desc: 'يدخل فقط على قسم تصحيح الأسئلة المقالية ومراجعة إجابات طلاب المدرس ورصد الدرجات دون عرض أي قسم آخر.',
+    label: 'تصحيح الإجابات المقالية ورصد الدرجات',
+    shortLabel: 'تصحيح الإجابات المقالية ✍️',
+    desc: 'يدخل فقط على قسم تصحيح إجابات الطلاب المقالية ومراجعة الدرجات دون عرض أي قسم آخر.',
     badgeColor: 'bg-amber-100 text-amber-800 border-amber-200',
     icon: ClipboardCheck,
   },
   {
     id: 'content_management',
-    label: 'مسؤول عن إضافة الدروس والمحتوى',
-    shortLabel: 'إضافة الدروس والمحتوى 📚',
-    desc: 'يدخل فقط على قسم إدارة كورسات المدرس وإضافة الدروس والفيديوهات وملفات PDF والامتحانات دون عرض أي قسم آخر.',
+    label: 'إضافة وإدارة الكورسات والدروس والمحتوى',
+    shortLabel: 'إدارة الدروس والمحتوى 📚',
+    desc: 'يدخل فقط على قسم إضافة وتعديل الكورسات والفيديوهات وملفات الـ PDF والامتحانات دون عرض أي قسم آخر.',
     badgeColor: 'bg-indigo-100 text-indigo-800 border-indigo-200',
     icon: BookOpen,
   },
@@ -82,6 +82,7 @@ export const TeacherAssistantsModal: React.FC<Props> = ({
 }) => {
   const [editingAssistantId, setEditingAssistantId] = useState<string | null>(null);
   const [assistantName, setAssistantName] = useState('');
+  const [assistantGender, setAssistantGender] = useState<'ذكر' | 'أنثى'>('أنثى');
   const [assistantAccountNumber, setAssistantAccountNumber] = useState('');
   const [assistantPassword, setAssistantPassword] = useState('');
   const [assistantSpecialty, setAssistantSpecialty] = useState<AssistantSpecialty>('student_support');
@@ -89,10 +90,16 @@ export const TeacherAssistantsModal: React.FC<Props> = ({
 
   if (!isOpen) return null;
 
+  const ownerDisplayName = 'أ/ سوزان كريم فهمي';
+
   const teacherAssistants = allUsers.filter(
     (u) =>
       (u.role === 'assistant' || u.isAssistant) &&
-      (u.assistantForTeacherId === teacher.id || u.assistantForTeacherName === teacher.name)
+      (teacher.email?.toLowerCase() === 'almtflsft@gmail.com' ||
+        u.assistantForTeacherId === teacher.id ||
+        u.assistantForTeacherId === 'teacher-1791139743075' ||
+        u.assistantForTeacherName === teacher.name ||
+        u.assistantForTeacherName?.includes('سوزان'))
   );
 
   const showToast = (text: string, type: 'success' | 'error' = 'success') => {
@@ -103,6 +110,7 @@ export const TeacherAssistantsModal: React.FC<Props> = ({
   const resetForm = () => {
     setEditingAssistantId(null);
     setAssistantName('');
+    setAssistantGender('أنثى');
     setAssistantAccountNumber('');
     setAssistantPassword('');
     setAssistantSpecialty('student_support');
@@ -111,6 +119,7 @@ export const TeacherAssistantsModal: React.FC<Props> = ({
   const handleEditClick = (assistant: User) => {
     setEditingAssistantId(assistant.id);
     setAssistantName(assistant.name);
+    setAssistantGender(assistant.gender === 'ذكر' ? 'ذكر' : 'أنثى');
     setAssistantAccountNumber(assistant.accountNumber || assistant.phone);
     setAssistantPassword(assistant.password || '');
     setAssistantSpecialty(assistant.assistantSpecialty || 'student_support');
@@ -121,17 +130,18 @@ export const TeacherAssistantsModal: React.FC<Props> = ({
     const cleanName = assistantName.trim();
     const cleanNumber = assistantAccountNumber.trim();
     const cleanPass = assistantPassword.trim();
+    const genderRoleWord = assistantGender === 'أنثى' ? 'المعلمة المساعدة' : 'المعلم المساعد';
 
     if (!cleanName) {
-      showToast('يرجى إدخال اسم المدرس المساعد', 'error');
+      showToast('يرجى إدخال اسم المعلم / المعلمة المساعدة', 'error');
       return;
     }
     if (!cleanNumber) {
-      showToast('يرجى كتابة الرقم الخاص بتسجيل دخول المدرس المساعد', 'error');
+      showToast('يرجى كتابة رقم الدخول للحساب', 'error');
       return;
     }
-    if (!cleanPass) {
-      showToast('يرجى كتابة كلمة المرور للمدرس المساعد', 'error');
+    if (!cleanPass && !editingAssistantId) {
+      showToast('يرجى كتابة كلمة المرور للمساعد', 'error');
       return;
     }
 
@@ -154,17 +164,18 @@ export const TeacherAssistantsModal: React.FC<Props> = ({
           updatedAssistantObj = {
             ...u,
             name: cleanName,
+            gender: assistantGender,
             phone: cleanNumber,
             accountNumber: cleanNumber,
-            password: cleanPass,
+            password: cleanPass || u.password || '',
             role: 'assistant',
             isAssistant: true,
             assistantSpecialty,
-            assistantForTeacherId: teacher.id,
-            assistantForTeacherName: teacher.name,
-            subject: teacher.subject || 'مادة عامة',
-            specialty: teacher.specialty || 'عام',
-            schoolYear: teacher.schoolYear || 'الصف الثالث الثانوي',
+            assistantForTeacherId: teacher.id || 'teacher-1791139743075',
+            assistantForTeacherName: ownerDisplayName,
+            subject: teacher.subject || 'الفلسفة والمنطق',
+            specialty: teacher.specialty || 'عام لجميع الشعب',
+            schoolYear: teacher.schoolYear || 'الصف الأول الثانوي',
             status: 'active',
           };
           return updatedAssistantObj;
@@ -176,26 +187,29 @@ export const TeacherAssistantsModal: React.FC<Props> = ({
       saveUsers(updatedList);
       if (updatedAssistantObj) {
         saveSingleUserToServer(updatedAssistantObj).catch(() => {});
-        setDoc(doc(db, 'users', editingAssistantId), updatedAssistantObj, { merge: true }).catch(() => {});
+        // Firestore rules forbid writing plaintext password key on /users/{id}
+        const { password: _omitPassword, ...firestoreSafeObj } = updatedAssistantObj;
+        setDoc(doc(db, 'users', editingAssistantId), firestoreSafeObj, { merge: true }).catch(() => {});
       }
-      showToast('تم تحديث بيانات وتخصص المدرس المساعد بنجاح ✅');
+      showToast(`تم تحديث بيانات وتخصص ${genderRoleWord} بنجاح ✅`);
       resetForm();
     } else {
       const newAssistant: User = {
         id: `assistant-${Date.now()}`,
         name: cleanName,
+        gender: assistantGender,
         phone: cleanNumber,
         accountNumber: cleanNumber,
         password: cleanPass,
         parentPhone: '',
-        schoolYear: teacher.schoolYear || 'الصف الثالث الثانوي',
+        schoolYear: teacher.schoolYear || 'الصف الأول الثانوي',
         role: 'assistant',
         isAssistant: true,
         assistantSpecialty,
-        assistantForTeacherId: teacher.id,
-        assistantForTeacherName: teacher.name,
-        subject: teacher.subject || 'مادة عامة',
-        specialty: teacher.specialty || 'عام',
+        assistantForTeacherId: teacher.id || 'teacher-1791139743075',
+        assistantForTeacherName: ownerDisplayName,
+        subject: teacher.subject || 'الفلسفة والمنطق',
+        specialty: teacher.specialty || 'عام لجميع الشعب',
         status: 'active',
         registeredAt: new Date().toISOString().split('T')[0],
       };
@@ -204,8 +218,10 @@ export const TeacherAssistantsModal: React.FC<Props> = ({
       onUpdateUsers(updatedList);
       saveUsers(updatedList);
       saveSingleUserToServer(newAssistant).catch(() => {});
-      setDoc(doc(db, 'users', newAssistant.id), newAssistant, { merge: true }).catch(() => {});
-      showToast(`تمت إضافة المدرس المساعد (${cleanName}) بنجاح! يمكنه الدخول الآن بالرقم والباسورد ✅`);
+      // Strip password before writing directly to Firestore (server hashes & stores credentials safely)
+      const { password: _omitPassword, ...firestoreSafeNew } = newAssistant;
+      setDoc(doc(db, 'users', newAssistant.id), firestoreSafeNew, { merge: true }).catch(() => {});
+      showToast(`تمت إضافة ${genderRoleWord} (${cleanName}) بنجاح! يمكنه الدخول الآن بالرقم وكلمة المرور ✅`);
       resetForm();
     }
   };
@@ -223,7 +239,7 @@ export const TeacherAssistantsModal: React.FC<Props> = ({
     if (editingAssistantId === assistant.id) {
       resetForm();
     }
-    showToast(`تم حذف حساب المدرس المساعد (${assistant.name}) نهائياً`, 'error');
+    showToast(`تم حذف حساب (${assistant.name}) نهائياً`, 'error');
   };
 
   return (
@@ -241,14 +257,14 @@ export const TeacherAssistantsModal: React.FC<Props> = ({
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="text-lg font-black text-slate-900">
-                  إضافة وإدارة المدرسين المساعدين
+                  إضافة وإدارة المعلمين والمعلمات المساعدين
                 </h3>
                 <span className="text-[11px] font-black px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
-                  المدرس: {teacher.name}
+                  منصة {ownerDisplayName}
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5 font-medium">
-                حدد تخصص المدرس المساعد ورقم الدخول وكلمة المرور، وعند تسجيل دخوله سيتم توجيهه فقط إلى القسم المخصص له دون عرض أي شيء آخر.
+                حددي النوع (معلم / معلمة) والتخصص ورقم الدخول وكلمة المرور؛ وكل مساعد يفتح له قسم تخصصه فقط دون غيره.
               </p>
             </div>
           </div>
@@ -286,13 +302,13 @@ export const TeacherAssistantsModal: React.FC<Props> = ({
           onSubmit={handleSaveAssistant}
           className="p-5 rounded-3xl bg-slate-50 border border-slate-200/90 space-y-4"
         >
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <h4 className="text-sm font-black text-slate-900 flex items-center gap-2">
               <UserPlus className="w-4 h-4 text-indigo-600" />
               <span>
                 {editingAssistantId
-                  ? 'تعديل بيانات المدرس المساعد'
-                  : 'إضافة مدرس مساعد جديد لهذا المدرس'}
+                  ? 'تعديل بيانات المعلم / المعلمة المساعدة'
+                  : 'إضافة معلم أو معلمة مساعدة جديدة'}
               </span>
             </h4>
             {editingAssistantId && (
@@ -301,51 +317,80 @@ export const TeacherAssistantsModal: React.FC<Props> = ({
                 onClick={resetForm}
                 className="text-xs font-black text-indigo-600 hover:underline cursor-pointer"
               >
-                + إلغاء التعديل وإضافة مساعد جديد
+                + إلغاء التعديل وإضافة جديد
               </button>
             )}
+          </div>
+
+          {/* Gender Selector (معلم / معلمة) */}
+          <div className="space-y-1.5">
+            <label className="block text-xs font-black text-slate-700">الصفة (معلم / معلمة) *:</label>
+            <div className="grid grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                onClick={() => setAssistantGender('أنثى')}
+                className={`py-2.5 px-4 rounded-xl border-2 text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                  assistantGender === 'أنثى'
+                    ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
+                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                <span>👩‍🏫</span>
+                <span>معلمة مساعدة</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setAssistantGender('ذكر')}
+                className={`py-2.5 px-4 rounded-xl border-2 text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                  assistantGender === 'ذكر'
+                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                <span>👨‍🏫</span>
+                <span>معلم مساعد</span>
+              </button>
+            </div>
           </div>
 
           {/* Assistant Name, Login Number, Password */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-black text-slate-700 mb-1">
-                اسم المدرس المساعد *
+                {assistantGender === 'أنثى' ? 'اسم المعلمة المساعدة *' : 'اسم المعلم المساعد *'}
               </label>
               <input
                 type="text"
                 required
                 value={assistantName}
                 onChange={(e) => setAssistantName(e.target.value)}
-                placeholder="مثال: أ. أحمد طارق (مساعد)"
+                placeholder={assistantGender === 'أنثى' ? 'مثال: أ/ سارة محمد' : 'مثال: أ/ أحمد طارق'}
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
               />
             </div>
 
             <div>
               <label className="block text-xs font-black text-slate-700 mb-1">
-                رقم الدخول للحساب (الذي سيسجل به) *
-              </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  required
-                  value={assistantAccountNumber}
-                  onChange={(e) => setAssistantAccountNumber(e.target.value)}
-                  placeholder="مثال: 01012345678 أو 5001"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 text-xs font-mono font-black focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
-                  dir="ltr"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-black text-slate-700 mb-1">
-                كلمة المرور (الباسورد) *
+                رقم الدخول للحساب *
               </label>
               <input
                 type="text"
                 required
+                value={assistantAccountNumber}
+                onChange={(e) => setAssistantAccountNumber(e.target.value)}
+                placeholder="مثال: 01012345678 أو 5001"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 text-xs font-mono font-black focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
+                dir="ltr"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-black text-slate-700 mb-1">
+                كلمة المرور {editingAssistantId ? '(اتركها كما هي أو اكتب جديدة)' : '*'}
+              </label>
+              <input
+                type="text"
+                required={!editingAssistantId}
                 value={assistantPassword}
                 onChange={(e) => setAssistantPassword(e.target.value)}
                 placeholder="اكتب كلمة المرور..."
@@ -358,7 +403,7 @@ export const TeacherAssistantsModal: React.FC<Props> = ({
           {/* Specialty Selection */}
           <div className="space-y-2">
             <label className="block text-xs font-black text-slate-700">
-              تحديد تخصص المدرس المساعد (القسم الذي سيفتح له فقط عند تسجيل الدخول) *
+              تحديد التخصص (يفتح له هذا القسم فقط عند تسجيل الدخول) *
             </label>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               {ASSISTANT_SPECIALTIES.map((spec) => {
@@ -416,18 +461,22 @@ export const TeacherAssistantsModal: React.FC<Props> = ({
             >
               <UserPlus className="w-4 h-4" />
               <span>
-                {editingAssistantId ? 'حفظ تعديلات المساعد' : 'إضافة وحفظ حساب المدرس المساعد'}
+                {editingAssistantId
+                  ? 'حفظ التعديلات'
+                  : assistantGender === 'أنثى'
+                  ? 'إضافة وحفظ المعلمة المساعدة'
+                  : 'إضافة وحفظ المعلم المساعد'}
               </span>
             </button>
           </div>
         </form>
 
-        {/* List of Existing Assistants for this Teacher */}
+        {/* List of Existing Assistants */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h4 className="text-sm font-black text-slate-900 flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              <span>المدرسون المساعدون المسجلون مع ({teacher.name})</span>
+              <span>فريق المعلمين والمعلمات المساعدين ({ownerDisplayName})</span>
             </h4>
             <span className="text-xs font-black px-2.5 py-1 rounded-full bg-slate-100 text-slate-700">
               {teacherAssistants.length} مساعد
@@ -437,10 +486,10 @@ export const TeacherAssistantsModal: React.FC<Props> = ({
           {teacherAssistants.length === 0 ? (
             <div className="p-8 rounded-3xl border border-dashed border-slate-300 bg-slate-50/50 text-center space-y-1">
               <p className="text-xs font-black text-slate-600">
-                لا يوجد مدرسون مساعدون مضافون لهذا المدرس حتى الآن
+                لا يوجد معلمون أو معلمات مساعدون مضافون حتى الآن
               </p>
               <p className="text-[11px] text-slate-400">
-                استخدم النموذج بالأعلى لإضافة مدرس مساعد وتحديد تخصصه ورقم الدخول والباسورد.
+                استخدمي النموذج بالأعلى لإضافة معلم أو معلمة وتحديد التخصص ورقم الدخول وكلمة المرور.
               </p>
             </div>
           ) : (
@@ -448,6 +497,7 @@ export const TeacherAssistantsModal: React.FC<Props> = ({
               {teacherAssistants.map((assistant) => {
                 const specMeta = getAssistantSpecialtyMeta(assistant.assistantSpecialty);
                 const loginNum = assistant.accountNumber || assistant.phone;
+                const isFemale = assistant.gender === 'أنثى';
                 return (
                   <div
                     key={assistant.id}
@@ -456,9 +506,20 @@ export const TeacherAssistantsModal: React.FC<Props> = ({
                     <div className="space-y-2">
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <h5 className="text-sm font-black text-slate-900">{assistant.name}</h5>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <h5 className="text-sm font-black text-slate-900">{assistant.name}</h5>
+                            <span
+                              className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                                isFemale
+                                  ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                  : 'bg-blue-50 text-blue-700 border border-blue-200'
+                              }`}
+                            >
+                              {isFemale ? '👩‍🏫 معلمة مساعدة' : '👨‍🏫 معلم مساعد'}
+                            </span>
+                          </div>
                           <span
-                            className={`inline-block mt-1 text-[10px] font-black px-2.5 py-0.5 rounded-full border ${specMeta.badgeColor}`}
+                            className={`inline-block mt-1.5 text-[10px] font-black px-2.5 py-0.5 rounded-full border ${specMeta.badgeColor}`}
                           >
                             {specMeta.shortLabel}
                           </span>
@@ -468,7 +529,7 @@ export const TeacherAssistantsModal: React.FC<Props> = ({
                             type="button"
                             onClick={() => handleEditClick(assistant)}
                             className="p-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-700 transition-colors cursor-pointer"
-                            title="تعديل بيانات المساعد"
+                            title="تعديل البيانات"
                           >
                             <Edit className="w-3.5 h-3.5" />
                           </button>
@@ -476,7 +537,7 @@ export const TeacherAssistantsModal: React.FC<Props> = ({
                             type="button"
                             onClick={() => handleDeleteAssistant(assistant)}
                             className="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 transition-colors cursor-pointer"
-                            title="حذف حساب المساعد"
+                            title="حذف الحساب"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -500,7 +561,7 @@ export const TeacherAssistantsModal: React.FC<Props> = ({
                               type="button"
                               onClick={() => {
                                 navigator.clipboard.writeText(loginNum);
-                                showToast('تم نسخ رقم دخول المساعد');
+                                showToast('تم نسخ رقم الدخول');
                               }}
                               className="p-1 text-slate-400 hover:text-indigo-600 cursor-pointer"
                               title="نسخ الرقم"
@@ -513,20 +574,20 @@ export const TeacherAssistantsModal: React.FC<Props> = ({
                         <div className="flex items-center justify-between">
                           <span className="text-slate-500 font-bold flex items-center gap-1">
                             <KeyRound className="w-3 h-3" />
-                            <span>الباسورد:</span>
+                            <span>كلمة المرور:</span>
                           </span>
                           <span
                             className="font-mono font-black text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100"
                             dir="ltr"
                           >
-                            {assistant.password || '—'}
+                            {assistant.password ? assistant.password : 'مشفّرة ومحفوظة 🔒'}
                           </span>
                         </div>
                       </div>
                     </div>
 
                     <div className="text-[10px] text-slate-500 font-bold border-t border-slate-100 pt-2">
-                      يفتح له فقط: <span className="text-slate-800 font-black">{specMeta.label}</span>
+                      الصلاحية الوحيدة: <span className="text-slate-800 font-black">{specMeta.label}</span>
                     </div>
                   </div>
                 );

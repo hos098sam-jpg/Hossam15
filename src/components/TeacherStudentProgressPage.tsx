@@ -31,12 +31,16 @@ export const TeacherStudentProgressPage: React.FC<TeacherStudentProgressPageProp
 }) => {
   const myCourses = useMemo(
     () =>
-      allCourses.filter(
-        (c) =>
-          c.instructorId === currentTeacher.id ||
-          c.instructor === currentTeacher.name ||
-          c.teacherName === currentTeacher.name
-      ),
+      currentTeacher.email?.toLowerCase() === 'almtflsft@gmail.com' ||
+      currentTeacher.role === 'admin' ||
+      !currentTeacher.isAssistant
+        ? allCourses
+        : allCourses.filter(
+            (c) =>
+              c.instructorId === currentTeacher.id ||
+              c.instructor === currentTeacher.name ||
+              c.teacherName === currentTeacher.name
+          ),
     [allCourses, currentTeacher]
   );
 
@@ -345,7 +349,7 @@ export const TeacherStudentProgressPage: React.FC<TeacherStudentProgressPageProp
                     )
                     .join('\n')
                 : '• لم يتم تسليم امتحانات إلكترونية بعد';
-            const reportMessage = `السلام عليكم ورحمة الله وبركاته 🌿\nتحية طيبة لولي أمر الطالب/ـة: *${student.name}* (${student.schoolYear || 'المرحلة الثانوية'})\nنرسل لحضرتكم تقرير المتابعة العلمية من *منصة قلب العلم التعليمية*:\n\n🎬 *نسبة إنجاز ومشاهدة الحصص:* ${item.videoPercentage}% (${item.completedVideosCount} من ${item.totalVideosCount} حصة)\n📊 *متوسط درجات الامتحانات:* ${item.averageExamScore}%\n🌟 *التقييم العام للطالب:* ${item.levelLabel}\n\n📝 *تفاصيل الامتحانات المسلمة:*\n${examsLines}\n\nمع خالص تمنياتنا بدوام التفوق والنجاح 🏆\n*الأستاذ / ${currentTeacher.name} - منصة قلب العلم التعليمية*`;
+            const reportMessage = `السلام عليكم ورحمة الله وبركاته 🌿\nتحية طيبة لولي أمر الطالب/ـة: *${student.name}* (${student.schoolYear || 'المرحلة الثانوية'})\nنرسل لحضرتكم تقرير المتابعة العلمية من *منصة المتفلسفة  التعليمية*:\n\n🎬 *نسبة إنجاز ومشاهدة الحصص:* ${item.videoPercentage}% (${item.completedVideosCount} من ${item.totalVideosCount} حصة)\n📊 *متوسط درجات الامتحانات:* ${item.averageExamScore}%\n🌟 *التقييم العام للطالب:* ${item.levelLabel}\n\n📝 *تفاصيل الامتحانات المسلمة:*\n${examsLines}\n\nمع خالص تمنياتنا بدوام التفوق والنجاح 🏆\n*الأستاذ / ${currentTeacher.name} - منصة المتفلسفة  التعليمية*`;
             const waUrl = `https://wa.me/20${cleanParentPhone}?text=${encodeURIComponent(reportMessage)}`;
 
             return (
@@ -361,14 +365,14 @@ export const TeacherStudentProgressPage: React.FC<TeacherStudentProgressPageProp
                     </div>
                     <div>
                       <h3 className="text-base font-black text-slate-900 dark:text-white">
-                        {student.name || 'طالب منصة قلب العلم'}
+                        {student.name || 'طالب منصة المتفلسفة '}
                       </h3>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                         هاتف الطالب: <span className="font-mono">{student.phone}</span>
                         {rawParentPhone && rawParentPhone !== student.phone ? (
                           <> • هاتف ولي الأمر: <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">{rawParentPhone}</span></>
                         ) : null}{' '}
-                        • {student.schoolYear || 'الصف الثالث الثانوي'}
+                        • {student.schoolYear || 'الصف الأول الثانوي'}
                       </p>
                     </div>
                   </div>

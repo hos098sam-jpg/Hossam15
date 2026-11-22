@@ -23,7 +23,8 @@ import {
 import confetti from 'canvas-confetti';
 import { CourseExam, ExamQuestion, StudentExamSubmission, EssayGradingResult, User } from '../types';
 import { getSavedSubmissions, saveSubmissions } from '../data/initialData';
-import { getIdToken, db } from '../auth';
+import { db } from '../auth';
+import { getClientAuthHeaders } from '../utils/authToken';
 import { doc, setDoc } from 'firebase/firestore';
 import { compressImageFile } from '../utils/imageUtils';
 import { formatDetailedExamDuration, formatDetailedSubmissionDate } from '../utils/studentStats';
@@ -121,6 +122,47 @@ export const ExamTakeView: React.FC<ExamTakeViewProps> = ({
   const [submission, setSubmission] = useState<StudentExamSubmission | null>(initialSubmission);
   const [copiedSolution, setCopiedSolution] = useState(false);
   const [showCertificateModal, setShowCertificateModal] = useState(false);
+  const [revealedSolutions, setRevealedSolutions] = useState<
+    Record<
+      string,
+      {
+        correctOptionIndex?: number;
+        modelAnswer?: string;
+        modelAnswerImage?: string;
+        rubricCriteria?: string;
+        explanation?: string;
+      }
+    >
+  >({});
+
+  useEffect(() => {
+    if (!submission) return;
+    const needsSolutions = exam.questions.some((q, idx) => {
+      const qId = String(q.id || `q_${idx}`);
+      const sol = revealedSolutions[qId] || revealedSolutions[q.id];
+      return q.correctOptionIndex === undefined && sol?.correctOptionIndex === undefined && !q.modelAnswer && !sol?.modelAnswer;
+    });
+    if (!needsSolutions) return;
+    let active = true;
+    (async () => {
+      try {
+        const headers = await getClientAuthHeaders();
+        const res = await fetch(
+          `/api/exams/${encodeURIComponent(exam.id)}/review-solutions?courseId=${encodeURIComponent(exam.courseId || '')}`,
+          { headers }
+        );
+        if (res.ok && active) {
+          const data = await res.json();
+          if (data?.questionSolutions) {
+            setRevealedSolutions((prev) => ({ ...prev, ...data.questionSolutions }));
+          }
+        }
+      } catch {}
+    })();
+    return () => {
+      active = false;
+    };
+  }, [submission?.submissionId, submission?.examId, exam.id, exam.courseId]);
 
   // Anti-Cheating & Random Question Bank State
   const [tabSwitchesCount, setTabSwitchesCount] = useState<number>(0);
@@ -240,7 +282,7 @@ export const ExamTakeView: React.FC<ExamTakeViewProps> = ({
   const toggleVoiceAnswer = async (questionId: string) => {
     if (recordingQuestionId === questionId) {
       recorderRef.current?.stop();
-      (window as any).__qalbalelmRecognition?.stop?.();
+      (window as any).__motafalsifaRecognition?.stop?.();
       setRecordingQuestionId(null);
       return;
     }
@@ -256,7 +298,7 @@ export const ExamTakeView: React.FC<ExamTakeViewProps> = ({
       };
       recognition.onend = () => setRecordingQuestionId(null);
       recognition.start();
-      (window as any).__qalbalelmRecognition = recognition;
+      (window as any).__motafalsifaRecognition = recognition;
     }
     try {
       const stream = await navigator.mediaDevices?.getUserMedia({ audio: true });
@@ -359,18 +401,18 @@ export const ExamTakeView: React.FC<ExamTakeViewProps> = ({
       const formattedDuration = formatDetailedExamDuration(exactElapsedSecs);
 
       const studentId = currentUser?.id || `student_${Date.now()}`;
-      const studentName = currentUser?.name || 'طالب منصة قلب العلم';
+      const studentName = currentUser?.name || 'طالب منصة المتفلسفة ';
       const studentPhone = currentUser?.phone || '';
       const parentPhone = currentUser?.parentPhone || currentUser?.fatherPhone || currentUser?.motherPhone || '';
-      const studentSchoolYear = currentUser?.schoolYear || 'الصف الثالث الثانوي';
+      const studentSchoolYear = currentUser?.schoolYear || 'الصف الأول الثانوي';
 
       let finalSubmission: StudentExamSubmission;
 
       try {
-        // Submit to secure backend for server-side verification and grading with 6s timeout
-        const token = await Promise.race([
-          getIdToken().catch(() => null),
-          new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000)),
+        // Submit to secure backend for authoritative server-side verification and grading
+        const authHeaders = await Promise.race([
+          getClientAuthHeaders({ 'Content-Type': 'application/json' }).catch(() => ({ 'Content-Type': 'application/json' })),
+          new Promise<Record<string, string>>((resolve) => setTimeout(() => resolve({ 'Content-Type': 'application/json' }), 2000)),
         ]);
 
         const controller = new AbortController();
@@ -379,10 +421,7 @@ export const ExamTakeView: React.FC<ExamTakeViewProps> = ({
         const res = await fetch('/api/exams/submit', {
           method: 'POST',
           signal: controller.signal,
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
+          headers: authHeaders,
           body: JSON.stringify({
             examId: exam.id,
             courseId: exam.courseId || '',
@@ -403,28 +442,22 @@ export const ExamTakeView: React.FC<ExamTakeViewProps> = ({
             essayAnswerImages: essayImages,
             essayAnswerAudio: essayAudio,
             essayAnswerTranscripts: essayAnswers,
-            essayGrades,
             status: submissionStatus,
             hasEssayQuestions,
             attemptNumber: currentAttemptNumber,
             priorAttemptsCount,
             maxAttempts,
             durationTakenSeconds: exactElapsedSecs,
-            clientTotalScore: totalScore,
-            clientMaxScore: maxScore,
             passingPercentage: exam.passingPercentage || 60,
-            questions: exam.questions.map((q, idx) => ({
-              id: String(q.id || `q_${idx}`),
-              type: q.type || 'mcq',
-              marks: Number(q.marks) || 10,
-              correctOptionIndex: q.correctOptionIndex,
-            })),
           }),
         });
         clearTimeout(timeoutId);
 
         if (res.ok) {
           const resData = await res.json();
+          if (resData?.questionSolutions) {
+            setRevealedSolutions((prev) => ({ ...prev, ...resData.questionSolutions }));
+          }
           if (resData.submission) {
             finalSubmission = {
               ...resData.submission,
@@ -437,11 +470,11 @@ export const ExamTakeView: React.FC<ExamTakeViewProps> = ({
               tabSwitchesCount,
               autoSubmittedByAntiCheat,
             };
-            if (resData.totalScore !== undefined && resData.maxScore > 0 && !resData.alreadySubmitted) {
+            if (resData.totalScore !== undefined && resData.maxScore > 0) {
               totalScore = resData.totalScore;
               maxScore = resData.maxScore;
               calculatedPercentage = Math.round((totalScore / maxScore) * 100);
-              passed = finalSubmission.status === 'under_review' ? false : calculatedPercentage >= (exam.passingPercentage || 60);
+              passed = finalSubmission.status === 'under_review' ? false : (resData.passed ?? calculatedPercentage >= (exam.passingPercentage || 60));
             }
           } else {
             throw new Error('No submission returned from server');
@@ -557,17 +590,21 @@ export const ExamTakeView: React.FC<ExamTakeViewProps> = ({
 الدرس: ${exam.lessonTitle}
 
 ${exam.questions
-  .map(
-    (q, idx) => `
+  .map((q, idx) => {
+    const qId = String(q.id || `q_${idx}`);
+    const sol = revealedSolutions[qId] || revealedSolutions[q.id] || {};
+    const mAnswer = q.modelAnswer || sol.modelAnswer || 'متاح بعد اعتماد التصحيح';
+    const refText = q.bookReference || sol.rubricCriteria || 'المنهاج المعتمد';
+    return `
 [السؤال ${idx + 1} (${q.type === 'mcq' ? 'اختيار من متعدد' : 'سؤال مقالي'}) - ${q.marks} درجة]:
 ${q.questionText}
 
 * الإجابة النموذجية المعتمدة:
-${q.modelAnswer}
+${mAnswer}
 
-* المرجع: ${q.bookReference || 'المنهاج المعتمد'}
-`
-  )
+* المرجع: ${refText}
+`;
+  })
   .join('\n----------------------------------------\n')}
     `.trim();
 
@@ -786,12 +823,14 @@ ${q.modelAnswer}
         {randomizedQuestions.map(({ q, qId, shuffledOptionIndices }, qIndex) => {
           const isMCQ = q.type === 'mcq' || (!q.type && Array.isArray(q.options) && q.options.length > 0);
           const selectedOption = mcqAnswers[qId] ?? mcqAnswers[q.id];
+          const sol = revealedSolutions[qId] || revealedSolutions[q.id] || {};
+          const effectiveCorrectOpt = q.correctOptionIndex ?? sol.correctOptionIndex;
           const isCorrectMCQ =
             selectedOption !== undefined &&
             selectedOption !== null &&
-            q.correctOptionIndex !== undefined &&
-            q.correctOptionIndex !== null &&
-            Number(selectedOption) === Number(q.correctOptionIndex);
+            effectiveCorrectOpt !== undefined &&
+            effectiveCorrectOpt !== null &&
+            Number(selectedOption) === Number(effectiveCorrectOpt);
 
           return (
             <div
@@ -872,7 +911,7 @@ ${q.modelAnswer}
                   ).map((originalOptIdx, displayIdx) => {
                     const opt = q.options![originalOptIdx];
                     const isSelected = selectedOption === originalOptIdx;
-                    const isCorrect = Number(q.correctOptionIndex) === originalOptIdx;
+                    const isCorrect = effectiveCorrectOpt !== undefined && Number(effectiveCorrectOpt) === originalOptIdx;
                     const optionImg = q.optionImages?.[originalOptIdx];
 
                     let optionStyle = 'border-slate-200 hover:border-indigo-400 hover:bg-slate-50 text-slate-800';
@@ -1010,7 +1049,11 @@ ${q.modelAnswer}
               )}
 
               {/* Model Solution & Model Answer Image (Under question) */}
-              {submission && (
+              {submission && (() => {
+                const effModelAnswer = q.modelAnswer || sol.modelAnswer;
+                const effModelAnswerImg = q.modelAnswerImage || sol.modelAnswerImage;
+                const effBookRef = q.bookReference || sol.rubricCriteria;
+                return (
                 <div className="mt-4 pt-4 border-t border-slate-100 space-y-4">
                   {isMCQ ? (
                     <div className="p-4 rounded-2xl bg-emerald-50/50 border border-emerald-200 space-y-3">
@@ -1019,25 +1062,25 @@ ${q.modelAnswer}
                         <span>الحل النموذجي المعتمد من الكتاب:</span>
                       </span>
 
-                      {q.modelAnswer && (
+                      {effModelAnswer && (
                         <p className="text-xs sm:text-sm text-slate-800 whitespace-pre-wrap font-medium leading-relaxed bg-white p-3 rounded-xl border border-emerald-100">
-                          {q.modelAnswer}
+                          {effModelAnswer}
                         </p>
                       )}
 
                       {/* Model Answer Image under question */}
-                      {q.modelAnswerImage && (
+                      {effModelAnswerImg && (
                         <div className="space-y-1 pt-1">
                           <span className="text-[11px] font-black text-emerald-900 block">🖼️ صورة الحل النموذجي:</span>
                           <div className="rounded-2xl overflow-hidden border border-emerald-200 bg-white p-2">
-                            <img src={q.modelAnswerImage} alt="model answer visual" className="max-h-72 object-contain w-full" />
+                            <img src={effModelAnswerImg} alt="model answer visual" className="max-h-72 object-contain w-full" />
                           </div>
                         </div>
                       )}
 
-                      {q.bookReference && (
+                      {effBookRef && (
                         <span className="text-[11px] text-slate-500 font-bold block pt-1">
-                          📖 المرجع: {q.bookReference}
+                          📖 المرجع: {effBookRef}
                         </span>
                       )}
                     </div>
@@ -1078,21 +1121,21 @@ ${q.modelAnswer}
                         </p>
                       )}
 
-                      {q.modelAnswer && (
+                      {effModelAnswer && (
                         <div className="space-y-1">
                           <span className="text-[11px] font-black text-slate-700 block">الإجابة النموذجية المعتمدة:</span>
                           <p className="text-xs sm:text-sm text-slate-800 whitespace-pre-wrap font-medium leading-relaxed bg-white p-3 rounded-xl border border-slate-200">
-                            {q.modelAnswer}
+                            {effModelAnswer}
                           </p>
                         </div>
                       )}
 
-                      {(submission.essayGrades?.[q.id]?.modelAnswerImage || q.modelAnswerImage) && (
+                      {(submission.essayGrades?.[q.id]?.modelAnswerImage || effModelAnswerImg) && (
                         <div className="space-y-1 pt-1">
                           <span className="text-[11px] font-black text-indigo-900 block">🖼️ صورة الحل النموذجي والخطوات:</span>
                           <div className="rounded-2xl overflow-hidden border border-indigo-200 bg-white p-2">
                             <img
-                              src={submission.essayGrades?.[q.id]?.modelAnswerImage || q.modelAnswerImage}
+                              src={submission.essayGrades?.[q.id]?.modelAnswerImage || effModelAnswerImg}
                               alt="model answer visual"
                               className="max-h-72 object-contain w-full"
                             />
@@ -1100,15 +1143,16 @@ ${q.modelAnswer}
                         </div>
                       )}
 
-                      {q.bookReference && (
+                      {effBookRef && (
                         <span className="text-[11px] text-slate-500 font-bold block pt-1">
-                          📖 المرجع: {q.bookReference}
+                          📖 المرجع: {effBookRef}
                         </span>
                       )}
                     </div>
                   )}
                 </div>
-              )}
+                );
+              })()}
             </div>
           );
         })}

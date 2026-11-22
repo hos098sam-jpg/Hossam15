@@ -1,4 +1,4 @@
-// Video Progress & Resume Playback Helper for Qalb Al-Elm Platform
+// Video Progress & Resume Playback Helper for Al-Motafalsifa Platform
 
 export interface VideoProgressRecord {
   currentTime: number;
@@ -8,7 +8,7 @@ export interface VideoProgressRecord {
   completed?: boolean;
 }
 
-const STORAGE_PREFIX = 'qalbalelm_video_progress_';
+const STORAGE_PREFIX = 'al_motafalsifa_video_progress_';
 
 function getStorageKey(videoId: any, userId?: any): string {
   const rawVid =

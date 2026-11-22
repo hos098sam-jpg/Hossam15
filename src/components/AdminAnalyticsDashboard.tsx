@@ -37,7 +37,7 @@ import {
   Line,
   Area,
   AreaChart,
-} from '../utils/rechartsShim';
+} from 'recharts';
 import type { Course, Competition, User, StudentExamSubmission } from '../types';
 
 interface AdminAnalyticsDashboardProps {
@@ -113,12 +113,7 @@ export const AdminAnalyticsDashboard: React.FC<AdminAnalyticsDashboardProps> = (
   // Students by Grade
   const gradeDistribution = useMemo(() => {
     const gradesMap: Record<string, { total: number; active: number }> = {
-      'الصف الثالث الثانوي': { total: 0, active: 0 },
-      'الصف الثاني الثانوي': { total: 0, active: 0 },
       'الصف الأول الثانوي': { total: 0, active: 0 },
-      'الصف الثالث الإعدادي': { total: 0, active: 0 },
-      'الصف الثاني الإعدادي': { total: 0, active: 0 },
-      'الصف الأول الإعدادي': { total: 0, active: 0 },
       'صفوف أخرى': { total: 0, active: 0 },
     };
 
@@ -150,9 +145,8 @@ export const AdminAnalyticsDashboard: React.FC<AdminAnalyticsDashboardProps> = (
     return [
       { name: 'طلاب مفعلين', value: activeStudents.length, color: STATUS_COLORS.active },
       { name: 'قيد المراجعة', value: pendingStudents.length, color: STATUS_COLORS.pending },
-      { name: 'معلمون معتمدون', value: totalTeachers, color: STATUS_COLORS.teachers },
     ].filter((item) => item.value > 0);
-  }, [activeStudents, pendingStudents, totalTeachers]);
+  }, [activeStudents, pendingStudents]);
 
   // --- 2. Courses Calculations ---
   const activeCourses = useMemo(() => {

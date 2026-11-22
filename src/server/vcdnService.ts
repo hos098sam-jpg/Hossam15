@@ -91,7 +91,7 @@ export interface VcdnConfig {
 
 const CONFIG_FILE_PATH = path.join(process.cwd(), 'data', 'vcdn-config.json');
 const TEMP_UPLOAD_DIR = path.join('/tmp', 'vcdn_uploads');
-const UPLOADS_DIR = path.join('/tmp', 'qalb_uploads');
+const UPLOADS_DIR = path.join('/tmp', 'al_motafalsifa_uploads');
 const LEGACY_UPLOADS_DIR = path.join(process.cwd(), 'data', 'uploads');
 
 // Ensure upload & storage directories exist
@@ -209,11 +209,9 @@ export function getVcdnConfig(): VcdnConfig {
     }
   } catch {}
 
-  const explicitTargetKey = 'vcdn_sk_2a3f5149b12d89f8c4a6e5b0e330f2e203188db3ff80219c';
   const apiKey = (
     fileKey ||
-    (process.env.VCDN_API_KEY && !process.env.VCDN_API_KEY.includes('5c1e83da') ? process.env.VCDN_API_KEY : '') ||
-    explicitTargetKey
+    (process.env.VCDN_API_KEY ? process.env.VCDN_API_KEY : '')
   ).trim();
 
   const rawBase = (fileBaseUrl || 'https://cdn.vcdn.me').trim().replace(/\/+$/, '');
@@ -224,7 +222,7 @@ export function getVcdnConfig(): VcdnConfig {
   return {
     apiKey,
     baseUrl,
-    domain: 'qalbalelm.web.app',
+    domain: 'motafalsifa.vercel.app',
     ladderProfile: 'standard',
     defaultVisibility: 'private',
   };
@@ -830,7 +828,7 @@ export async function createPlaybackToken(params: {
   const cleanId = params.videoId.replace(/^vcdn:/, '').trim();
   const ttl = params.ttlSeconds || 3600;
   const student = {
-    name: params.studentName || 'طالب منصة قلب العلم',
+    name: params.studentName || 'طالب منصة المتفلسفة ',
     id: params.studentId || 'std_guest',
     phone: params.studentPhone || '',
   };

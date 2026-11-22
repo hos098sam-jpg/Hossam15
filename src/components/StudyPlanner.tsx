@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { BacBranch } from '../types';
 import ReactMarkdown from 'react-markdown';
+import { getClientAuthHeaders } from '../utils/authToken';
 
 interface StudyPlannerProps {
   branch: BacBranch;
@@ -21,7 +22,7 @@ export const StudyPlanner: React.FC<StudyPlannerProps> = ({ branch }) => {
   const [hoursPerDay, setHoursPerDay] = useState('6 ساعات');
   const [focusSubjects, setFocusSubjects] = useState(
     branch === 'scientific'
-      ? 'الرياضيات والفيزياء والكيمياء واللغات'
+      ? 'الرياضيات والفيزياء والفلسفة والمنطق واللغات'
       : 'الفلسفة واللغة العربية والتاريخ واللغات'
   );
   const [weeks, setWeeks] = useState('أسبوع واحد نموذجي');
@@ -36,9 +37,10 @@ export const StudyPlanner: React.FC<StudyPlannerProps> = ({ branch }) => {
     setPlanContent(null);
 
     try {
+      const headers = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
       const res = await fetch('/api/study-plan', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           branch: branch === 'scientific' ? 'الفرع العلمي' : 'الفرع الأدبي',
           hoursPerDay,

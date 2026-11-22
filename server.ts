@@ -2,7 +2,7 @@ import "dotenv/config";
 import path from "path";
 import fs from "fs";
 import express from "express";
-import { app, initFirebaseAdmin } from "./src/server/apiApp";
+import { app, initFirebaseAdmin, initActiveUserSessions, attachSessionWebSocketServer } from "./src/server/apiApp";
 
 function getArg(flag: string): string | undefined {
   const idx = process.argv.indexOf(flag);
@@ -24,8 +24,9 @@ process.on("unhandledRejection", (reason: any) => {
   console.warn("[Server UnhandledRejection Guard]:", reason?.message || reason);
 });
 
-// Ensure admin initialized on launch
+// Ensure admin & active session cache initialized on launch
 initFirebaseAdmin();
+initActiveUserSessions();
 
 async function startServer() {
   const distPath = path.join(process.cwd(), "dist");
@@ -63,8 +64,9 @@ async function startServer() {
   }
 
   const server = app.listen(PORT, HOST, () => {
-    console.log(`🚀 منصة قلب العلم التعليمية Server running on http://${HOST}:${PORT}`);
+    console.log(`🚀 منصة المتفلسفة  التعليمية Server running on http://${HOST}:${PORT}`);
   });
+  attachSessionWebSocketServer(server);
 
   server.on("error", (err: any) => {
     console.error("Server listen error:", err);

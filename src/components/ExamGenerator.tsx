@@ -15,6 +15,7 @@ import {
 import { BacBranch } from '../types';
 import { BAC_SUBJECTS } from '../data/bacData';
 import ReactMarkdown from 'react-markdown';
+import { getClientAuthHeaders } from '../utils/authToken';
 
 interface ExamGeneratorProps {
   branch: BacBranch;
@@ -47,9 +48,10 @@ export const ExamGenerator: React.FC<ExamGeneratorProps> = ({ branch }) => {
     const subjectName = subjectObj ? subjectObj.name : selectedSubject;
 
     try {
+      const headers = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
       const res = await fetch('/api/generate-exam', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           subject: subjectName,
           chapter: chapter || 'شامل للمنهج',

@@ -50,7 +50,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'unread' | 'urgent' | 'students' | 'parents' | 'general'>('all');
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
     try {
-      return localStorage.getItem('qalb_alam_sound_enabled') !== 'false';
+      return localStorage.getItem('al_motafalsifa_sound_enabled') !== 'false';
     } catch {
       return true;
     }
@@ -68,7 +68,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
       }
     };
 
-    window.addEventListener('qalb_alam_notifications_updated', handleUpdate);
+    window.addEventListener('al_motafalsifa_notifications_updated', handleUpdate);
     window.addEventListener('storage', handleUpdate);
 
     if (typeof window !== 'undefined' && 'Notification' in window) {
@@ -78,7 +78,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
     }
 
     return () => {
-      window.removeEventListener('qalb_alam_notifications_updated', handleUpdate);
+      window.removeEventListener('al_motafalsifa_notifications_updated', handleUpdate);
       window.removeEventListener('storage', handleUpdate);
     };
   }, []);
@@ -115,7 +115,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
     const next = !soundEnabled;
     setSoundEnabled(next);
     try {
-      localStorage.setItem('qalb_alam_sound_enabled', String(next));
+      localStorage.setItem('al_motafalsifa_sound_enabled', String(next));
     } catch {}
     if (next) {
       playNotificationSound();
@@ -132,7 +132,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
     if (result === 'granted') {
       playNotificationSound();
       try {
-        new Notification('منصة قلب العلم التعليمية', {
+        new Notification('منصة المتفلسفة  التعليمية', {
           body: 'تم تفعيل إشعارات جهازك بنجاح! ستصلك التنبيهات الرسمية من المشرف العام فور صدورها.',
           icon: '/logo.png',
           dir: 'rtl',
@@ -142,7 +142,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
   };
 
   const handleCopyNotification = (item: PlatformNotification) => {
-    const textToCopy = `📢 [${item.title}]\n${item.message}\n\nبواسطة: ${item.senderName} (${item.timestamp}) - منصة قلب العلم`;
+    const textToCopy = `📢 [${item.title}]\n${item.message}\n\nبواسطة: ${item.senderName} (${item.timestamp}) - منصة المتفلسفة `;
     if (navigator.clipboard) {
       navigator.clipboard.writeText(textToCopy).then(() => {
         setCopiedId(item.id);
@@ -155,7 +155,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
     if (navigator.share) {
       navigator.share({
         title: item.title,
-        text: `${item.title}\n\n${item.message}\n\nمنصة قلب العلم التعليمية 2027`,
+        text: `${item.title}\n\n${item.message}\n\nمنصة المتفلسفة  التعليمية 2027`,
         url: window.location.href,
       }).catch(() => {});
     } else {
@@ -580,7 +580,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
 
         {/* Bottom Banner */}
         <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center text-xs text-slate-500 dark:text-slate-400">
-          منصة قلب العلم التعليمية • إشراف عام: {platformSettings?.supervisorName || 'إدارة المنصة'}
+          منصة المتفلسفة  التعليمية • إشراف عام: {platformSettings?.supervisorName || 'إدارة المنصة'}
         </div>
       </div>
     </div>

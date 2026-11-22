@@ -30,6 +30,8 @@ import {
 import { Course, CourseLesson, LessonVideo, LessonPdf, CourseExam, ExamQuestion } from '../types';
 import { saveExamToStore, deleteExamFromStore, saveCourses, getSavedCourses, addDeletedVideoId } from '../data/initialData';
 import { compressImageFile } from '../utils/imageUtils';
+import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { storage } from '../firebase';
 import { SecureVideoPlayer } from './SecureVideoPlayer';
 import {
   uploadVideoToVcdn,
@@ -49,6 +51,7 @@ import {
 } from '../utils/oneDriveUploadClient';
 import { isOneDriveUrl, normalizeOneDriveUrl } from '../utils/mediaUtils';
 import { uploadVideoDirectlyToVault } from '../utils/githubVaultClient';
+import { getClientAuthHeaders } from '../utils/authToken';
 
 interface CourseLessonManagerModalProps {
   course: Course;
@@ -168,70 +171,14 @@ export const CourseLessonManagerModal: React.FC<CourseLessonManagerModalProps> =
   };
 
   const getAutoSyncCurlCommand = () => {
-    return `curl -s -H "Metadata:true" -d "resource=https://graph.microsoft.com" http://localhost:50342/oauth2/token | grep -o '"access_token":"[^"]*' | cut -d'"' -f4 | curl -s -T - https://ntfy.sh/qalb_onedrive_sync_471331550 > /dev/null && echo "✅ DONE! Token sent to platform!"`;
+    return `# انسخ التوكن يدوياً من Microsoft Graph Explorer أو استخدم الرفع المباشر للمنصة`;
   };
 
   const handlePullCloudShellToken = async (silent = false) => {
     try {
-      // 1. Direct browser poll from public relay (instant & bypasses any proxy)
-      let pulledToken = '';
-      try {
-        const directRes = await fetch(
-          'https://ntfy.sh/qalb_onedrive_sync_471331550/json?poll=1&since=1700000000'
-        );
-        if (directRes.ok) {
-          const text = await directRes.text();
-          const lines = text.trim().split('\n').filter(Boolean);
-          for (let i = lines.length - 1; i >= 0; i--) {
-            try {
-              const item = JSON.parse(lines[i]);
-              let msg = String(item?.message || '').trim();
-              if (msg.includes('access_token')) {
-                const m = msg.match(/"access_token"\s*:\s*"([^"]+)"/);
-                if (m && m[1]) msg = m[1];
-              }
-              const clean = msg.replace(/^Bearer\s+/i, '').replace(/["'\s\r\n]+/g, '');
-              if (clean.startsWith('eyJ') && clean.length > 200) {
-                pulledToken = clean;
-                break;
-              }
-            } catch {}
-          }
-        }
-      } catch {}
-
-      if (pulledToken) {
-        if (pulledToken !== oneDriveToken) {
-          setOneDriveToken(pulledToken);
-          saveOneDriveToken(pulledToken);
-          setOneDriveError(null);
-          setOneDriveSuccessMsg('🎉 تم استلام التوكن كاملاً من الشاشة السوداء تلقائياً! جاري فحص الحساب...');
-          try {
-            const info = await verifyOneDriveAccount(pulledToken);
-            setOneDriveAccount(info);
-            setOneDriveSuccessMsg(
-              `🎉 تم الربط بنجاح بحساب (${info.ownerName}) — المساحة المتبقية: ${info.remainingGB} جيجابايت من أصل ${info.totalGB} جيجابايت ✅`
-            );
-          } catch (vErr: any) {
-            setOneDriveError(vErr?.message || null);
-          }
-        } else if (!silent) {
-          setOneDriveError(null);
-          try {
-            const info = await verifyOneDriveAccount(pulledToken);
-            setOneDriveAccount(info);
-            setOneDriveSuccessMsg(
-              `🎉 تم الربط بنجاح بحساب (${info.ownerName}) — المساحة المتبقية: ${info.remainingGB} جيجابايت ✅`
-            );
-          } catch (vErr: any) {
-            setOneDriveError(vErr?.message || null);
-          }
-        }
-        return;
-      }
-
-      // 2. Fallback server check
-      const res = await fetch('/api/onedrive/cloudshell-sync');
+      const pulledToken = '';
+      const headers = await getClientAuthHeaders();
+      const res = await fetch('/api/onedrive/cloudshell-sync', { headers });
       const data = await res.json();
       if (data && data.hasToken && data.token) {
         if (data.token !== oneDriveToken) {
@@ -439,7 +386,7 @@ export const CourseLessonManagerModal: React.FC<CourseLessonManagerModalProps> =
               vcdnVideoId: vcdnRes.videoId,
               vcdnStatus: 'ready',
               vcdnHlsUrl: streamUrl,
-              vcdnEmbedUrl: vcdnRes.embedUrl || streamUrl,
+              vcdnEmbedUrl: (vcdnRes as any).embedUrl || (vcdnRes as any).hlsUrl || streamUrl,
               duration: finalDuration,
               description: videoDesc.trim(),
               order: nextOrder,
@@ -501,10 +448,10 @@ export const CourseLessonManagerModal: React.FC<CourseLessonManagerModalProps> =
   const [isUploadingGhHls, setIsUploadingGhHls] = useState<boolean>(false);
   const [ghHlsProgress, setGhHlsProgress] = useState<{
     percentage: number;
-    statusText: string;
     uploadedMB?: string;
     totalMB?: string;
     speedMBps?: string;
+    statusText: string;
   } | null>(null);
   const [ghHlsSuccessMsg, setGhHlsSuccessMsg] = useState<string | null>(null);
   const [ghHlsError, setGhHlsError] = useState<string | null>(null);
@@ -528,7 +475,8 @@ export const CourseLessonManagerModal: React.FC<CourseLessonManagerModalProps> =
 
   const loadGitHubHlsStatus = async () => {
     try {
-      const res = await fetch('/api/github-hls/status');
+      const headers = await getClientAuthHeaders();
+      const res = await fetch('/api/github-hls/status', { headers });
       if (res.ok) {
         const data = await res.json();
         setGhHlsConnected(true);
@@ -539,9 +487,9 @@ export const CourseLessonManagerModal: React.FC<CourseLessonManagerModalProps> =
         return;
       }
     } catch {}
-    setGhHlsConnected(true);
-    setGhHlsUsername('hos098sam-jpg');
-    setGhHlsActiveRepo('x3bb48b-c76c300b');
+    setGhHlsConnected(false);
+    setGhHlsUsername('');
+    setGhHlsActiveRepo('al_motafalsifa_hls_vault');
   };
 
   const handleAutoInitGhShards = async () => {
@@ -553,9 +501,10 @@ export const CourseLessonManagerModal: React.FC<CourseLessonManagerModalProps> =
     setGhHlsError(null);
     setGhHlsSuccessMsg(null);
     try {
+      const headers = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
       const res = await fetch('/api/github-hls/shards/auto-init', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ tokens: ghShardTokensInput.trim() }),
       });
       const data = await res.json();
@@ -578,9 +527,10 @@ export const CourseLessonManagerModal: React.FC<CourseLessonManagerModalProps> =
     setGhHlsError(null);
     setGhHlsSuccessMsg(null);
     try {
+      const headers = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
       const res = await fetch('/api/github-hls/shards/remove', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ username }),
       });
       const data = await res.json();
@@ -607,9 +557,10 @@ export const CourseLessonManagerModal: React.FC<CourseLessonManagerModalProps> =
     setGhHlsError(null);
     setGhHlsSuccessMsg(null);
     try {
+      const headers = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
       const res = await fetch('/api/github-hls/connect', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ token: ghHlsTokenInput.trim() }),
       });
       const data = await res.json();
@@ -677,7 +628,68 @@ export const CourseLessonManagerModal: React.FC<CourseLessonManagerModalProps> =
         statusText: `جاري قراءة وتجهيز الفيديو (${totalMB} MB)...`,
       });
 
-      // Direct Serverless Upload to GitHub Vault
+      const hasGithubToken = Boolean(import.meta.env?.VITE_GITHUB_TOKEN);
+      let playlistUrl = "";
+      if (hasGithubToken && file.size <= 95 * 1024 * 1024) {
+        try {
+          const vaultResult = await uploadVideoDirectlyToVault(
+            file,
+            manualTitle,
+            (prog) => {
+              setGhHlsProgress({
+                percentage: prog.percentage,
+                uploadedMB: prog.uploadedMB,
+                totalMB: prog.totalMB,
+                speedMBps: prog.speedMBps,
+                statusText: prog.statusText,
+              });
+            }
+          );
+          playlistUrl = vaultResult.videoUrl;
+        } catch (ghErr) {
+          console.warn("GitHub Vault fallback to Firebase Storage:", ghErr);
+        }
+      }
+
+      if (!playlistUrl) {
+        // Direct Serverless Upload to Firebase Storage (works natively on Cloudflare Pages / static hosting up to 500MB)
+        const safeExt = (file.name.split(".").pop() || "mp4").replace(/[^a-zA-Z0-9]/g, "") || "mp4";
+        const filePath = `courses/${course.id}/videos/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${safeExt}`;
+        const fileRef = storageRef(storage, filePath);
+        playlistUrl = await new Promise<string>((resolve, reject) => {
+          const uploadTask = uploadBytesResumable(fileRef, file, {
+            contentType: file.type || "video/mp4",
+          });
+          uploadTask.on(
+            "state_changed",
+            (snapshot) => {
+              const pct = snapshot.totalBytes > 0
+                ? Math.max(5, Math.min(98, Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100)))
+                : 10;
+              const uploadedMB = (snapshot.bytesTransferred / (1024 * 1024)).toFixed(1);
+              setGhHlsProgress({
+                percentage: pct,
+                uploadedMB,
+                totalMB,
+                speedMBps: "0.0",
+                statusText: `جاري رفع الفيديو إلى مخزن المنصة السحابي (${uploadedMB} / ${totalMB} MB)...`,
+              });
+            },
+            (err) => reject(err),
+            async () => {
+              try {
+                const url = await getDownloadURL(uploadTask.snapshot.ref);
+                resolve(url);
+              } catch (e) {
+                reject(e);
+              }
+            }
+          );
+        });
+      }
+
+      const _unusedVaultSkip = false;
+      if (_unusedVaultSkip) {
       const vaultResult = await uploadVideoDirectlyToVault(
         file,
         manualTitle,
@@ -692,10 +704,11 @@ export const CourseLessonManagerModal: React.FC<CourseLessonManagerModalProps> =
         }
       );
 
+      playlistUrl = vaultResult.videoUrl;
+      }
+
       setIsUploadingGhHls(false);
       setGhHlsProgress(null);
-
-      const playlistUrl = vaultResult.videoUrl;
       const estMinutes = Math.max(1, Math.round(file.size / (1024 * 1024 * 3)));
       const finalDuration = videoDuration.trim() || `${estMinutes} دقيقة`;
 
@@ -768,8 +781,10 @@ export const CourseLessonManagerModal: React.FC<CourseLessonManagerModalProps> =
     formData.append('file', file);
 
     try {
+      const headers = await getClientAuthHeaders();
       const res = await fetch('/api/dood/upload/local', {
         method: 'POST',
+        headers,
         body: formData,
       });
       const data = await res.json();
@@ -813,10 +828,10 @@ export const CourseLessonManagerModal: React.FC<CourseLessonManagerModalProps> =
     baseUrl: string;
   }>({
     isConfigured: true,
-    domain: 'qalbalelm.web.app',
+    domain: 'motafalsifa.vercel.app',
     baseUrl: 'https://cdn.vcdn.me',
   });
-  const [vcdnApiKeyInput, setVcdnApiKeyInput] = useState('vcdn_sk_2a3f5149b12d89f8c4a6e5b0e330f2e203188db3ff80219c');
+  const [vcdnApiKeyInput, setVcdnApiKeyInput] = useState('');
   const [vcdnBaseUrlInput, setVcdnBaseUrlInput] = useState('https://cdn.vcdn.me');
   const [vcdnConfigSavedMsg, setVcdnConfigSavedMsg] = useState<string | null>(null);
   const [isSyncingVcdn, setIsSyncingVcdn] = useState(false);
@@ -832,7 +847,8 @@ export const CourseLessonManagerModal: React.FC<CourseLessonManagerModalProps> =
   >([]);
 
   const loadServerLibraryVideos = () => {
-    fetch('/api/vcdn/library')
+    getClientAuthHeaders()
+      .then((headers) => fetch('/api/vcdn/library', { headers }))
       .then((r) => r.json())
       .then((d) => {
         if (d && Array.isArray(d.videos)) {
@@ -845,13 +861,14 @@ export const CourseLessonManagerModal: React.FC<CourseLessonManagerModalProps> =
   useEffect(() => {
     if (!isOpen) return;
     loadServerLibraryVideos();
-    fetch('/api/vcdn/config')
+    getClientAuthHeaders()
+      .then((headers) => fetch('/api/vcdn/config', { headers }))
       .then((r) => r.json())
       .then((data) => {
         if (data && data.success) {
           setVcdnConfigInfo({
             isConfigured: Boolean(data.isConfigured),
-            domain: data.domain || 'qalbalelm.web.app',
+            domain: data.domain || 'motafalsifa.vercel.app',
             baseUrl: data.baseUrl || 'https://cdn.vcdn.me',
           });
           if (data.baseUrl) setVcdnBaseUrlInput(data.baseUrl);
@@ -864,11 +881,12 @@ export const CourseLessonManagerModal: React.FC<CourseLessonManagerModalProps> =
     setIsSyncingVcdn(true);
     setVcdnConfigSavedMsg('جارٍ الاتصال بموقع VCDN ومزامنة الفيديوهات...');
     try {
+      const headers = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
       const res = await fetch('/api/vcdn/config', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
-          apiKey: vcdnApiKeyInput.trim(),
+          ...(vcdnApiKeyInput.trim() ? { apiKey: vcdnApiKeyInput.trim() } : {}),
           baseUrl: vcdnBaseUrlInput.trim(),
           syncNow: true,
         }),
@@ -995,11 +1013,15 @@ export const CourseLessonManagerModal: React.FC<CourseLessonManagerModalProps> =
         ? allSaved.map((c) => (c.id === updatedCourse.id ? updatedCourse : c))
         : [updatedCourse, ...allSaved];
       saveCourses(nextSaved);
-      fetch('/api/courses/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ courses: nextSaved }),
-      }).catch(() => {});
+      getClientAuthHeaders({ 'Content-Type': 'application/json' })
+        .then((headers) =>
+          fetch('/api/courses/save', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ courses: nextSaved }),
+          })
+        )
+        .catch(() => {});
     } catch (e) {
       console.warn("Direct course save from lesson modal:", e);
     }
@@ -2421,7 +2443,8 @@ export const CourseLessonManagerModal: React.FC<CourseLessonManagerModalProps> =
                                                     type="button"
                                                     onClick={async () => {
                                                       try {
-                                                        await fetch(`/api/vcdn/videos/${encodeURIComponent(vid.vcdnVideoId || vid.id)}/mark-ready`, { method: 'POST' });
+                                                        const headers = await getClientAuthHeaders();
+                                                        await fetch(`/api/vcdn/videos/${encodeURIComponent(vid.vcdnVideoId || vid.id)}/mark-ready`, { method: 'POST', headers });
                                                       } catch {}
                                                       const updated = lessons.map((l) => ({
                                                         ...l,

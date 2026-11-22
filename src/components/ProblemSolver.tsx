@@ -13,6 +13,7 @@ import {
 import { BacBranch } from '../types';
 import { BAC_SUBJECTS } from '../data/bacData';
 import ReactMarkdown from 'react-markdown';
+import { getClientAuthHeaders } from '../utils/authToken';
 
 interface ProblemSolverProps {
   branch: BacBranch;
@@ -42,9 +43,10 @@ export const ProblemSolver: React.FC<ProblemSolverProps> = ({ branch }) => {
     const subjectName = subjectObj ? subjectObj.name : selectedSubject;
 
     try {
+      const headers = await getClientAuthHeaders({ 'Content-Type': 'application/json' });
       const res = await fetch('/api/solve-problem', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           problemText,
           subject: subjectName,

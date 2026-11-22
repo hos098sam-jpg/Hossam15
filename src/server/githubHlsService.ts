@@ -128,12 +128,9 @@ export function generateStealthRepoName(
 ): string {
   const cleanUser = String(username || 'hos098sam-jpg').trim().toLowerCase();
   const idx = Number(repoIndex || 1);
-  if (cleanUser === 'hos098sam-jpg' && idx <= 1) {
-    return 'x3bb48b-c76c300b';
-  }
-  const seed = `stealth:${cleanUser}:${idx}:${String(token || 'qalb').trim().slice(0, 12)}`;
+  const seed = `stealth:al_motafalsifa:${cleanUser}:${idx}:${String(token || 'mtaf').trim().slice(0, 12)}`;
   const hash = crypto.createHash('sha256').update(seed).digest('hex');
-  return `x${hash.slice(0, 6)}-${hash.slice(6, 14)}`;
+  return `m${hash.slice(0, 6)}-${hash.slice(6, 14)}`;
 }
 
 export function isIdentifiableRepoName(name?: string): boolean {
@@ -181,12 +178,14 @@ export function getGitHubHlsConfig(): GitHubHlsConfig | null {
       }
     }
   } catch {}
+  const fallbackUser = 'hos098sam-jpg';
+  const fallbackToken = process.env.GITHUB_VAULT_TOKEN || process.env.VITE_GITHUB_TOKEN || '';
   return {
-    token: process.env.GITHUB_VAULT_TOKEN || process.env.VITE_GITHUB_TOKEN || '',
-    username: 'hos098sam-jpg',
-    activeRepo: 'x3bb48b-c76c300b',
+    token: fallbackToken,
+    username: fallbackUser,
+    activeRepo: generateStealthRepoName(fallbackUser, 1, fallbackToken),
     repoIndex: 1,
-    connectedAt: '2026-10-31T22:47:17.796Z',
+    connectedAt: new Date().toISOString(),
   };
 }
 
@@ -327,17 +326,7 @@ export async function syncCatalogToGitHubRepo(cfg: GitHubHlsConfig): Promise<voi
       `sync ${opaqueHash.slice(0, 7)}`
     );
 
-    // Keep legacy vault_db.json in sync as well so any instance checking either repo sees all videos
-    if (cfg.activeRepo !== 'qalbelm-hls-vault-1') {
-      upsertGitHubRepoFile(
-        cfg.token,
-        cfg.username,
-        'qalbelm-hls-vault-1',
-        'vault_db.json',
-        vaultPayload,
-        `sync ${opaqueHash.slice(0, 7)}`
-      ).catch(() => {});
-    }
+    // Strict isolation: only sync catalog to active Al-Motafalsifa repository
   } catch (err: any) {
     console.warn('[GitHub Catalog Sync Notice]:', err?.message || err);
   }
@@ -395,10 +384,8 @@ export async function ensureGitHubHlsVideoLoaded(videoId: string): Promise<GitHu
     new Set(
       [
         cfg.activeRepo,
-        'x3bb48b-c76c300b',
-        'qalbelm-hls-vault-1',
         ...(Array.isArray(cfg.shards) ? cfg.shards.map((s) => s.activeRepo) : []),
-      ].filter(Boolean)
+      ].filter((r) => Boolean(r) && r !== 'x3bb48b-c76c300b' && r !== 'qalbelm-hls-vault-1')
     )
   );
 
@@ -462,6 +449,7 @@ export async function ensureGitHubHlsVideoLoaded(videoId: string): Promise<GitHu
 }
 
 export interface PlatformCloudVaultSnapshot {
+  platform?: string;
   updatedAt: string;
   courses?: any[];
   users?: any[];
@@ -477,6 +465,9 @@ export interface PlatformCloudVaultSnapshot {
 export async function savePlatformStateToCloudVault(state: PlatformCloudVaultSnapshot): Promise<boolean> {
   const cfg = getGitHubHlsConfig();
   if (!cfg || !cfg.token || !cfg.username) return false;
+  if (cfg.activeRepo === 'x3bb48b-c76c300b' || cfg.activeRepo === 'qalbelm-hls-vault-1') {
+    return false;
+  }
 
   try {
     const masterKey = crypto.createHash('sha256').update(cfg.token.trim()).digest();
@@ -484,6 +475,7 @@ export async function savePlatformStateToCloudVault(state: PlatformCloudVaultSna
     const cipher = crypto.createCipheriv('aes-256-cbc', masterKey, iv);
     const jsonStr = JSON.stringify({
       ...state,
+      platform: 'al_motafalsifa',
       updatedAt: state.updatedAt || new Date().toISOString(),
     });
     const encryptedPayload = Buffer.concat([
@@ -492,7 +484,7 @@ export async function savePlatformStateToCloudVault(state: PlatformCloudVaultSna
     ]).toString('base64');
 
     const fileContent = JSON.stringify(
-      { encrypted: true, iv: iv.toString('hex'), payload: encryptedPayload, updatedAt: new Date().toISOString() },
+      { encrypted: true, platform: 'al_motafalsifa', iv: iv.toString('hex'), payload: encryptedPayload, updatedAt: new Date().toISOString() },
       null,
       2
     );
@@ -501,7 +493,7 @@ export async function savePlatformStateToCloudVault(state: PlatformCloudVaultSna
       cfg.token,
       cfg.username,
       cfg.activeRepo,
-      'platform_db_vault.json',
+      'al_motafalsifa_platform_db_vault.json',
       fileContent,
       `sync state`
     );
@@ -517,7 +509,7 @@ export async function loadPlatformStateFromCloudVault(): Promise<PlatformCloudVa
   if (!cfg || !cfg.token || !cfg.username) return null;
 
   const candidateRepos = Array.from(
-    new Set([cfg.activeRepo, 'x3bb48b-c76c300b', 'qalbelm-hls-vault-1'].filter(Boolean))
+    new Set([cfg.activeRepo].filter((r) => Boolean(r) && r !== 'x3bb48b-c76c300b' && r !== 'qalbelm-hls-vault-1'))
   );
 
   let newestSnapshot: PlatformCloudVaultSnapshot | null = null;
@@ -526,7 +518,7 @@ export async function loadPlatformStateFromCloudVault(): Promise<PlatformCloudVa
   await Promise.all(
     candidateRepos.map(async (repoName) => {
       try {
-        const url = `https://api.github.com/repos/${encodeURIComponent(cfg.username)}/${encodeURIComponent(repoName)}/contents/platform_db_vault.json`;
+        const url = `https://api.github.com/repos/${encodeURIComponent(cfg.username)}/${encodeURIComponent(repoName)}/contents/al_motafalsifa_platform_db_vault.json`;
         const res = await axios.get(url, {
           headers: ghHeaders(cfg.token),
           timeout: 10000,
@@ -555,7 +547,7 @@ export async function loadPlatformStateFromCloudVault(): Promise<PlatformCloudVa
             snapshot = parsed as PlatformCloudVaultSnapshot;
           }
 
-          if (snapshot) {
+          if (snapshot && (!snapshot.platform || snapshot.platform === 'al_motafalsifa')) {
             const ts = new Date(snapshot.updatedAt || parsed.updatedAt || 0).getTime() || 0;
             if (!newestSnapshot || ts >= newestTs) {
               newestSnapshot = snapshot;
@@ -1808,9 +1800,26 @@ export async function fetchEncryptedHlsSegmentBuffer(
 // ============================================================================
 // CRYPTOGRAPHIC ANTI-SNIFFER KEY GUARD (/enc.key HMAC-SHA256 + NONCE + TTL)
 // ============================================================================
-const KEY_GUARD_SECRET =
-  process.env.HLS_KEY_GUARD_SECRET ||
-  crypto.createHash('sha256').update(`qalbelm_hls_key_shield_${process.cwd()}`).digest('hex');
+function getOrCreateHlsKeyGuardSecret(): string {
+  if (process.env.HLS_KEY_GUARD_SECRET && process.env.HLS_KEY_GUARD_SECRET.trim()) {
+    return process.env.HLS_KEY_GUARD_SECRET.trim();
+  }
+  const secretPath = path.join(DATA_DIR, '.hls_key_guard_secret');
+  try {
+    if (fs.existsSync(secretPath)) {
+      const val = fs.readFileSync(secretPath, 'utf-8').trim();
+      if (val.length >= 32) return val;
+    }
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    const fresh = crypto.randomBytes(32).toString('hex');
+    fs.writeFileSync(secretPath, fresh, { encoding: 'utf-8', mode: 0o600 });
+    return fresh;
+  } catch {
+    return crypto.randomBytes(32).toString('hex');
+  }
+}
+
+const KEY_GUARD_SECRET = getOrCreateHlsKeyGuardSecret();
 
 const KEY_TOKEN_TTL_MS = 15 * 60 * 1000; // 15 minutes max lifetime per playlist load
 const keyTokenUsageMap = new Map<string, { count: number; expiresAt: number }>();

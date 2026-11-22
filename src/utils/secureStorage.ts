@@ -9,9 +9,9 @@ import type { Course, CourseExam, ExamQuestion, User } from '../types';
  */
 const PLATFORM_STORAGE_SECRET =
   (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_STORAGE_ENCRYPTION_KEY) ||
-  'QALB_AL_ELM_2027_AES256_FORTIFIED_SECRET_KEY_v9';
+  'AL_MOTAFALSIFA_2027_AES256_FORTIFIED_KEY_v9';
 
-const ENCRYPTED_PREFIX = 'QAE_ENC_V1:';
+const ENCRYPTED_PREFIX = 'MTAF_ENC_V1:';
 
 // In-memory hot cache + background write debounce to eliminate main-thread AES-256 UI freezes
 const memorySecureCache = new Map<string, { data: any; ts: number; ttlMs?: number }>();
